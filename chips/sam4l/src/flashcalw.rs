@@ -28,7 +28,6 @@ use kernel::ReturnCode;
 use kernel::common::VolatileCell;
 use kernel::common::take_cell::TakeCell;
 use kernel::hil;
-use nvic;
 use pm;
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
@@ -291,11 +290,11 @@ impl FLASHCALW {
 
 
     pub fn handle_interrupt(&self) {
-        unsafe {
-            //  mark the controller as ready and clear pending interrupt
-            self.ready.set(true);
-            nvic::clear_pending(nvic::NvicIdx::HFLASHC);
-        }
+        //  disable the interrupt line for flash
+        self.enable_ready_int(false);
+
+        //  mark the controller as ready and clear pending interrupt
+        self.ready.set(true);
 
         let error_status = self.get_error_status();
         self.error_status.set(error_status);
@@ -810,11 +809,6 @@ impl FLASHCALW {
 
         }
 
-        // Enable interrupts from nvic.
-        unsafe {
-            nvic::enable(nvic::NvicIdx::HFLASHC);
-        }
-
         // Configure all other interrupts explicitly. Note the issue_command
         // function turns this on when need be.
         self.enable_ready_int(false);
@@ -881,9 +875,8 @@ impl FLASHCALW {
         // This is kind of strange, but because read() in this case is
         // synchronous, we still need to schedule as if we had an interrupt so
         // we can call the callback.
-        unsafe {
-            flash_handler();
-        }
+        //
+        //TODO: this used to be here... flash_handler(); would `handle_interrupt()` work?
 
         ReturnCode::SUCCESS
     }
@@ -944,17 +937,4 @@ impl hil::flash::Flash for FLASHCALW {
     fn erase_page(&self, page_number: usize) -> ReturnCode {
         self.erase_page(page_number as i32)
     }
-}
-
-/// Assumes the only Peripheral Interrupt enabled for the FLASHCALW is the
-/// FRDY (Flash Ready) interrupt.
-pub unsafe extern "C" fn flash_handler() {
-    use kernel::common::Queue;
-    use chip;
-
-    //  disable the nvic interrupt line for flash, turn of the perherial interrupt,
-    //  and queue a handle interrupt.
-    FLASH_CONTROLLER.enable_ready_int(false);
-    nvic::disable(nvic::NvicIdx::HFLASHC);
-    chip::INTERRUPT_QUEUE.as_mut().unwrap().enqueue(nvic::NvicIdx::HFLASHC);
 }
