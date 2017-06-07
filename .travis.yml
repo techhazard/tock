@@ -17,7 +17,7 @@ rust:
 before_install:
   # Install Homebrew on Linux
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
-      git clone --depth=1 https://github.com/Linuxbrew/brew.git ~/.linuxbrew || true;
+      ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install)"
     fi
   # Update homebrew
   - brew tap ARMmbed/homebrew-formulae
