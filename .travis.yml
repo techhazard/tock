@@ -15,11 +15,15 @@ rust:
   - nightly-2017-05-24
 
 before_install:
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./.travis-install-gcc; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then export PATH="$PATH:$HOME/gcc-arm-none-eabi-6_2-2016q4/bin"; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]] && [[ "$TRAVIS_BRANCH$TRAVIS_EVENT_TYPE" == "masterpush" ]]; then brew tap ARMmbed/homebrew-formulae; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]] && [[ "$TRAVIS_BRANCH$TRAVIS_EVENT_TYPE" == "masterpush" ]]; then brew update; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]] && [[ "$TRAVIS_BRANCH$TRAVIS_EVENT_TYPE" == "masterpush" ]]; then brew install arm-none-eabi-gcc; fi
+  # Install Homebrew on Linux
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+      git clone --depth=1 https://github.com/Linuxbrew/brew.git ~/.linuxbrew || true;
+    fi
+  # Update homebrew
+  - brew tap ARMmbed/homebrew-formulae
+  - brew update
+  # Install needed packages
+  - brew install arm-none-eabi-gcc
 
 before_script:
   - (cargo install --vers 0.7.1 rustfmt || true)
