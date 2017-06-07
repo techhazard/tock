@@ -18,7 +18,7 @@ before_install:
   # Install Homebrew on Linux
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
       ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install)";
-      export PATH="$PATH:$HOME/.linuxbrew/bin"
+      export PATH="$PATH:$HOME/.linuxbrew/bin";
     fi
   # Update homebrew
   - brew tap ARMmbed/homebrew-formulae
