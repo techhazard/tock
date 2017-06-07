@@ -33,6 +33,7 @@ before_script:
 
 script:
   - command -v arm-none-eabi-gcc && echo yep || echo nope
+  - arm-none-eabi-gcc --version
   - export PATH=$HOME/.cargo/bin:$PATH
   - export PATH="$PATH:$HOME/.linuxbrew/bin";
   - if [[ "$TRAVIS_OS_NAME" != "osx" ]] || [[ "$TRAVIS_BRANCH$TRAVIS_EVENT_TYPE" == "masterpush" ]]; then tools/run_cargo_fmt.sh diff; fi
