@@ -16,13 +16,14 @@
 
 #include <console.h>
 #include <led.h>
+#include <timer.h>
 #include <tock.h>
 
 #include "nrf.h"
 
 
 void blehttp_init (void);
-void init_post (void);
+void init_post (int value);
 void write_http_string (void);
 void write_http_string_loop (void);
 
@@ -72,7 +73,7 @@ static const ble_gap_scan_params_t m_scan_param = {
 static uint8_t blehttp_service_id[16] = BLEHTTP_BASE_UUID_B;
 
 
-
+static bool _connected_and_ready = false;
 
 
 __attribute__ ((const))
@@ -94,16 +95,21 @@ char AIO_KEY[] =  "3e83a80b0ed94a338a3b3d26998b0dbe";
 char USERNAME[] = "bradjc";
 char FEED_NAME[] = "hail-test";
 
-void init_post (void) {
-  int written = snprintf(_post, 512,
+void init_post (int value) {
+  char body[256];
+  int written;
+
+  written = snprintf(body, 256, "value=%i", value);
+
+  written = snprintf(_post, 512,
                          "POST /api/v2/%s/feeds/%s/data HTTP/1.1\r\n"
                          "Host: io.adafruit.com\r\n"
                          "X-AIO-Key: %s\r\n"
                          "Content-Type: application/x-www-form-urlencoded\r\n"
-                         "Content-Length: 7\r\n"
+                         "Content-Length: %i\r\n"
                          "\r\n"
-                         "value=7",
-                         USERNAME, FEED_NAME, AIO_KEY);
+                         "%s",
+                         USERNAME, FEED_NAME, AIO_KEY, written, body);
   if (written > 512) {
     printf("umm, couldn't fit post.");
   }
@@ -339,7 +345,11 @@ void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
             _char_desc_cccd_handle = p_desc_disc_rsp->descs[i].handle;
             printf("desc handle 0x%x\n", _char_desc_cccd_handle);
 
-            write_http_string();
+            _connected_and_ready = true;
+            // write_http_string();
+            //
+            //
+            // do_post();
             break;
           }
         }
@@ -391,6 +401,7 @@ void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
     case BLE_GAP_EVT_DISCONNECTED: {
       conn_handle = BLE_CONN_HANDLE_INVALID;
       printf("disconnect\n");
+      _connected_and_ready = false;
       break;
     }
 
@@ -484,6 +495,37 @@ void ble_evt_adv_report (ble_evt_t* p_ble_evt) {
   }
 }
 
+void connect_to_gateway (void) {
+  uint32_t err_code;
+
+  err_code = sd_ble_gap_scan_stop();
+  err_code = sd_ble_gap_scan_start(&m_scan_param);
+  // It is okay to ignore this error since we are stopping the scan anyway.
+  if (err_code != NRF_ERROR_INVALID_STATE) {
+    APP_ERROR_CHECK(err_code);
+  }
+}
+
+void do_post (void) {
+  init_post(10);
+  write_http_string();
+}
+
+void sensing_timer_callback (int a, int b, int c, void* ud) {
+  printf("cb\n");
+  if (_connected_and_ready) {
+    int light = isl29035_read_light_intensity();
+    printf("send %i\n", light);
+    init_post(light);
+    write_http_string();
+  }
+}
+
+void start_sensing () {
+  printf("start sensing\n");
+  timer_every(5000, sensing_timer_callback, NULL);
+}
+
 
 /*******************************************************************************
  * MAIN
@@ -494,17 +536,13 @@ int main (void) {
 
   printf("[BLE] Find Gateway\n");
 
-  init_post();
+  // init_post();
 
   simple_ble_init(&ble_config);
 
   blehttp_init();
 
-  err_code = sd_ble_gap_scan_stop();
+  connect_to_gateway();
 
-  err_code = sd_ble_gap_scan_start(&m_scan_param);
-  // It is okay to ignore this error since we are stopping the scan anyway.
-  if (err_code != NRF_ERROR_INVALID_STATE) {
-    APP_ERROR_CHECK(err_code);
-  }
+  start_sensing();
 }

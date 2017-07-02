@@ -105,14 +105,18 @@ bleno.on('advertisingStart', function(error) {
 
 
 							request(b, function (error, response, body) {
-								console.log('error:', error);
-								console.log('statusCode:', response && response.statusCode);
-								console.log('headers:', response.headers);
-								console.log('body:', body);
-								console.log(typeof body);
+								if (response.statusCode == 200) {
+									console.log('error:', error);
+									console.log('statusCode:', response && response.statusCode);
+									console.log('headers:', response.headers);
+									console.log('body:', body);
+									console.log(typeof body);
 
-								_body = body;
-								_notify_callback(Buffer.from('ready!'));
+									_body = body;
+									_notify_callback(Buffer.from('ready!'));
+								} else {
+									console.log('nooo');
+								}
 							});
 
 							callback(bleno.Characteristic.RESULT_SUCCESS)
