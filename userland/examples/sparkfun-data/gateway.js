@@ -105,7 +105,9 @@ bleno.on('advertisingStart', function(error) {
 
 
 							request(b, function (error, response, body) {
-								if (response.statusCode == 200) {
+								if (error) {
+									console.log(error);
+								} else if (response.statusCode == 200) {
 									console.log('error:', error);
 									console.log('statusCode:', response && response.statusCode);
 									console.log('headers:', response.headers);
