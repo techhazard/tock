@@ -39,7 +39,7 @@ simple_ble_config_t ble_config = {
   .device_id         = DEVICE_ID_DEFAULT,
   .adv_name          = "tock-http",
   .adv_interval      = MSEC_TO_UNITS(500, UNIT_0_625_MS),
-  .min_conn_interval = MSEC_TO_UNITS(1000, UNIT_1_25_MS),
+  .min_conn_interval = MSEC_TO_UNITS(10, UNIT_1_25_MS),
   .max_conn_interval = MSEC_TO_UNITS(1250, UNIT_1_25_MS)
 };
 
@@ -48,8 +48,12 @@ simple_ble_config_t ble_config = {
 #define BLEHTTP_BASE_UUID_B {0x30, 0xb3, 0xf6, 0x90, 0x9a, 0x4f, 0x89, 0xb8, 0x1e, 0x46, 0x44, 0xcf, 0x01, 0x00, 0xba, 0x16}
 #define BLE_UUID_BLEHTTP_CHAR 0x0002
 
-#define MIN_CONNECTION_INTERVAL MSEC_TO_UNITS(20, UNIT_1_25_MS) /**< Determines minimum connection interval in millisecond. */
-#define MAX_CONNECTION_INTERVAL MSEC_TO_UNITS(75, UNIT_1_25_MS) /**< Determines maximum connection interval in millisecond. */
+// #define MIN_CONNECTION_INTERVAL MSEC_TO_UNITS(20, UNIT_1_25_MS) /**< Determines minimum connection interval in millisecond. */
+#define MIN_CONNECTION_INTERVAL MSEC_TO_UNITS(10, UNIT_1_25_MS) /**< Determines minimum connection interval in millisecond. */
+// #define MIN_CONNECTION_INTERVAL BLE_GAP_CP_MAX_CONN_INTVL_MIN
+// #define MAX_CONNECTION_INTERVAL MSEC_TO_UNITS(75, UNIT_1_25_MS) /**< Determines maximum connection interval in millisecond. */
+#define MAX_CONNECTION_INTERVAL MSEC_TO_UNITS(10, UNIT_1_25_MS) /**< Determines maximum connection interval in millisecond. */
+// #define MAX_CONNECTION_INTERVAL BLE_GAP_CP_MAX_CONN_INTVL_MIN
 #define SLAVE_LATENCY           0                               /**< Determines slave latency in counts of connection events. */
 #define SUPERVISION_TIMEOUT     MSEC_TO_UNITS(4000, UNIT_10_MS) /**< Determines supervision time-out in units of 10 millisecond. */
 
@@ -126,6 +130,13 @@ typedef enum {
 int _write_offset = 0;
 write_state_e _write_state = WRITE_STATE_ENABLE_NOTIFICATIONS;
 
+typedef enum {
+  BLEHTTP_STATE_IDLE,
+  BLEHTTP_STATE_EXECUTING_REQUEST,
+} blthttp_state_e;
+
+blthttp_state_e _blehttp_state = BLEHTTP_STATE_IDLE;
+
 void write_http_string_loop (void) {
   uint32_t err_code;
   uint8_t buf[2];
@@ -181,7 +192,7 @@ void write_http_string_loop (void) {
     }
   }
 
-  printf("write quick get string %i %i %i\n", _write_offset, _write_state, write_params.handle);
+  // printf("write quick get string %i %i %i\n", _write_offset, _write_state, write_params.handle);
   err_code = sd_ble_gattc_write(conn_handle, &write_params);
   if (err_code != NRF_SUCCESS) {
     printf("error writing Characteristic 0x%x\n", err_code);
@@ -190,6 +201,7 @@ void write_http_string_loop (void) {
 
 // Write the HTTP request to the gateway.
 void write_http_string (void) {
+  _blehttp_state = BLEHTTP_STATE_EXECUTING_REQUEST;
   _write_offset = 0;
   _write_state = WRITE_STATE_ENABLE_NOTIFICATIONS;
   write_http_string_loop();
@@ -215,7 +227,7 @@ void continue_read (const ble_gattc_evt_read_rsp_t* p_read_rsp) {
   uint32_t err_code;
 
   if (p_read_rsp->offset <= 512 && p_read_rsp->offset + p_read_rsp->len <= 512) {
-    printf("copying into buffer %i %i\n", p_read_rsp->offset, p_read_rsp->len);
+    // printf("copying into buffer %i %i\n", p_read_rsp->offset, p_read_rsp->len);
     memcpy(_body+p_read_rsp->offset, p_read_rsp->data, p_read_rsp->len);
     _body_len += p_read_rsp->len;
   }
@@ -227,6 +239,7 @@ void continue_read (const ble_gattc_evt_read_rsp_t* p_read_rsp) {
     }
   } else {
     printf("%.*s\n", _body_len, _body);
+    _blehttp_state = BLEHTTP_STATE_IDLE;
   }
 }
 
@@ -245,7 +258,23 @@ void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
       conn_params.slave_latency     = SLAVE_LATENCY;
       conn_params.conn_sup_timeout  = CONN_SUP_TIMEOUT;
 
-      sd_ble_gap_conn_param_update(0, &conn_params);
+      sd_ble_gap_conn_param_update(conn_handle, &conn_params);
+      break;
+    }
+
+    case BLE_GAP_EVT_CONN_PARAM_UPDATE_REQUEST: {
+      const ble_gap_conn_params_t* p_conn_params = &(p_ble_evt->evt.gap_evt.params.conn_param_update_request);
+      printf("update req: min: %i, max: %i, slave: %i, timeout: %i\n",
+        p_conn_params->min_conn_interval,
+        p_conn_params->max_conn_interval,
+        p_conn_params->slave_latency,
+        p_conn_params->conn_sup_timeout);
+      // ble_gap_conn_params_t conn_params;
+      // memcpy(&conn_params, p_conn_params, sizeof(ble_gap_conn_params_t));
+      // err_code = sd_ble_gap_conn_param_update(conn_handle, &conn_params);
+      // if (err_code != NRF_SUCCESS) {
+      //   printf("error updating conn params %li\n", err_code);
+      // }
       break;
     }
 
@@ -513,7 +542,7 @@ void do_post (void) {
 
 void sensing_timer_callback (int a, int b, int c, void* ud) {
   printf("cb\n");
-  if (_connected_and_ready) {
+  if (_connected_and_ready && _blehttp_state == BLEHTTP_STATE_IDLE) {
     int light = isl29035_read_light_intensity();
     printf("send %i\n", light);
     init_post(light);
@@ -523,7 +552,11 @@ void sensing_timer_callback (int a, int b, int c, void* ud) {
 
 void start_sensing () {
   printf("start sensing\n");
-  timer_every(5000, sensing_timer_callback, NULL);
+  while(1) {
+    delay_ms(5000);
+    sensing_timer_callback(0, 0, 0, NULL);
+  }
+  // timer_in(5000, sensing_timer_callback, NULL);
 }
 
 

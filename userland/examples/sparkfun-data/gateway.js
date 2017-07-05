@@ -152,10 +152,6 @@ bleno.on('advertisingStartError', function (err) {
 	debug(err);
 });
 
-bleno.on('connect', function (client_address) {
-	debug('connect ' + client_address);
-});
-
 bleno.on('disconnect', function (client_address) {
 	debug('DISCONNECT ' + client_address);
 });
