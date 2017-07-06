@@ -1,0 +1,19 @@
+{
+  "name": "http-gateway",
+  "version": "1.0.0",
+  "description": "Help BLE devices make HTTP reqeusts.",
+  "main": "gateway.js",
+  "dependencies": {
+    "bleno": "git://github.com/lab11/bleno.git#central-gatt-server",
+    "debug": "^2.6.8",
+    "http-string-parser": "0.0.6",
+    "noble": "^1.8.1",
+    "request": "^2.81.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}

@@ -5,8 +5,12 @@
 #include <unistd.h>
 
 #include <ble_advdata.h>
+#include <ble_hci.h>
 #include <nordic_common.h>
 #include <nrf_error.h>
+#include <nrf_sdm.h>
+#include <softdevice_handler.h>
+#include <ble_conn_params.h>
 
 #include <eddystone.h>
 #include <simple_adv.h>
@@ -42,6 +46,11 @@ simple_ble_config_t ble_config = {
   .min_conn_interval = MSEC_TO_UNITS(10, UNIT_1_25_MS),
   .max_conn_interval = MSEC_TO_UNITS(1250, UNIT_1_25_MS)
 };
+
+ble_gap_adv_params_t m_adv_params;
+
+#define CENTRAL_LINK_COUNT 1
+#define PERIPHERAL_LINK_COUNT 1
 
 
 #define BLEHTTP_BASE_UUID {{0x30, 0xb3, 0xf6, 0x90, 0x9a, 0x4f, 0x89, 0xb8, 0x1e, 0x46, 0x44, 0xcf, 0x01, 0x00, 0xba, 0x16}}
@@ -86,7 +95,7 @@ void ble_address_set (void) {
 }
 
 uint16_t _char_handle = 0;
-uint16_t _char_decl_handle = 0;
+// uint16_t _char_decl_handle = 0;
 uint16_t _char_desc_cccd_handle = 0;
 
 char get[] = "GET https://j2x.us/\r\nhost: j2x.us\r\n\r\n";
@@ -240,13 +249,70 @@ void continue_read (const ble_gattc_evt_read_rsp_t* p_read_rsp) {
   } else {
     printf("%.*s\n", _body_len, _body);
     _blehttp_state = BLEHTTP_STATE_IDLE;
+
+    err_code = sd_ble_gap_disconnect(conn_handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+    if (err_code != NRF_SUCCESS) {
+      printf("error diconnecting??");
+    }
+  }
+}
+
+
+static bool is_blehttp_service_present(const ble_gap_evt_adv_report_t *p_adv_report) {
+  uint32_t index = 0;
+  uint8_t *p_data = (uint8_t *)p_adv_report->data;
+
+  while (index < p_adv_report->dlen) {
+    uint8_t field_length = p_data[index];
+    uint8_t field_type   = p_data[index+1];
+
+    if ((field_type == BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_MORE_AVAILABLE ||
+         field_type == BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_COMPLETE) &&
+        (field_length - 1 == 16 &&
+         memcmp(blehttp_service_id, &p_data[index + 2], 16) == 0)) {
+
+      printf("Connecting to target %02x%02x%02x%02x%02x%02x\n",
+                       p_adv_report->peer_addr.addr[0],
+                       p_adv_report->peer_addr.addr[1],
+                       p_adv_report->peer_addr.addr[2],
+                       p_adv_report->peer_addr.addr[3],
+                       p_adv_report->peer_addr.addr[4],
+                       p_adv_report->peer_addr.addr[5]
+                       );
+
+      return true;
+    }
+    index += field_length + 1;
+  }
+  return false;
+}
+
+static void extract_name(const ble_gap_evt_adv_report_t *p_adv_report, char* buffer) {
+  uint32_t index = 0;
+  uint8_t *p_data = (uint8_t *)p_adv_report->data;
+  ble_uuid_t extracted_uuid;
+
+  while (index < p_adv_report->dlen) {
+    uint8_t field_length = p_data[index];
+    uint8_t field_type   = p_data[index+1];
+
+    if ((field_type == BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME)
+        || (field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME)) {
+      memcpy(buffer, &p_data[index+2], field_length-1);
+    }
+    index += field_length + 1;
   }
 }
 
 
 
-void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
+
+
+// void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
+static void on_ble_evt_me (ble_evt_t* p_ble_evt) {
   uint32_t err_code;
+
+  // printf("event %i\n", p_ble_evt->header.evt_id);
 
   switch (p_ble_evt->header.evt_id) {
     case BLE_GAP_EVT_CONN_PARAM_UPDATE: {
@@ -278,12 +344,9 @@ void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
       break;
     }
 
-    case BLE_GAP_EVT_ADV_REPORT: {
-      // ignore
-      break;
-    }
-
     case BLE_GAP_EVT_CONNECTED: {
+      advertising_stop();
+
       conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
 
       ble_uuid_t httpget_service_uuid = {
@@ -291,7 +354,7 @@ void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
         .type = BLE_UUID_TYPE_VENDOR_BEGIN,
       };
 
-      printf("discover services %x\n", conn_handle);
+      printf("connected handle: %x\n", conn_handle);
       uint32_t err_code = sd_ble_gattc_primary_services_discover(conn_handle, 0x0001, &httpget_service_uuid);
       if (err_code != NRF_SUCCESS) {
         printf("error discovering services 0x%lx\n", err_code);
@@ -340,51 +403,58 @@ void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
           printf("char: uuid: 0x%x type: 0x%x\n", p_char_disc_rsp->chars[i].uuid.uuid, p_char_disc_rsp->chars[i].uuid.type);
           if (BLE_UUID_EQ(&httpget_characteristic_uuid, &(p_char_disc_rsp->chars[i].uuid))) {
             _char_handle = p_char_disc_rsp->chars[i].handle_value;
-            _char_decl_handle = p_char_disc_rsp->chars[i].handle_decl;
+            // _char_decl_handle = p_char_disc_rsp->chars[i].handle_decl;
             printf("found char handle 0x%x\n", _char_handle);
-            printf("found decl handle 0x%x\n", _char_decl_handle);
+            // printf("found decl handle 0x%x\n", _char_decl_handle);
 
-            ble_gattc_handle_range_t descriptor_handle;
-            descriptor_handle.start_handle = _char_handle + 1;
-            descriptor_handle.end_handle = _char_handle + 1;
+            _char_desc_cccd_handle = _char_handle + 1;
 
-            err_code = sd_ble_gattc_descriptors_discover(conn_handle, &descriptor_handle);
-            if (err_code != NRF_SUCCESS) {
-              printf("error getting descriptors %i\n", err_code);
-            }
-            break;
-          }
-        }
-      }
-      break;
-    }
-
-    case BLE_GATTC_EVT_DESC_DISC_RSP: {
-      if (p_ble_evt->evt.gattc_evt.gatt_status != BLE_GATT_STATUS_SUCCESS) {
-        printf("descriptor not found\n");
-      } else {
-        const ble_gattc_evt_desc_disc_rsp_t* p_desc_disc_rsp;
-        p_desc_disc_rsp = &(p_ble_evt->evt.gattc_evt.params.desc_disc_rsp);
-
-        for (int i = 0; i < p_desc_disc_rsp->count; i++) {
-          printf("desc: uuid: 0x%x type: 0x%x\n", p_desc_disc_rsp->descs[i].uuid.uuid, p_desc_disc_rsp->descs[i].uuid.type);
-
-          if (p_desc_disc_rsp->descs[i].uuid.uuid == 0x2902) {
-            // Found the CCCD descriptor
-            _char_desc_cccd_handle = p_desc_disc_rsp->descs[i].handle;
-            printf("desc handle 0x%x\n", _char_desc_cccd_handle);
 
             _connected_and_ready = true;
-            // write_http_string();
-            //
-            //
-            // do_post();
+
+            write_http_string();
+
+            // ble_gattc_handle_range_t descriptor_handle;
+            // descriptor_handle.start_handle = _char_handle + 1;
+            // descriptor_handle.end_handle = _char_handle + 1;
+
+            // err_code = sd_ble_gattc_descriptors_discover(conn_handle, &descriptor_handle);
+            // if (err_code != NRF_SUCCESS) {
+            //   printf("error getting descriptors %i\n", err_code);
+            // }
             break;
           }
         }
       }
       break;
     }
+
+    // case BLE_GATTC_EVT_DESC_DISC_RSP: {
+    //   if (p_ble_evt->evt.gattc_evt.gatt_status != BLE_GATT_STATUS_SUCCESS) {
+    //     printf("descriptor not found\n");
+    //   } else {
+    //     const ble_gattc_evt_desc_disc_rsp_t* p_desc_disc_rsp;
+    //     p_desc_disc_rsp = &(p_ble_evt->evt.gattc_evt.params.desc_disc_rsp);
+
+    //     for (int i = 0; i < p_desc_disc_rsp->count; i++) {
+    //       printf("desc: uuid: 0x%x type: 0x%x\n", p_desc_disc_rsp->descs[i].uuid.uuid, p_desc_disc_rsp->descs[i].uuid.type);
+
+    //       if (p_desc_disc_rsp->descs[i].uuid.uuid == 0x2902) {
+    //         // Found the CCCD descriptor
+    //         _char_desc_cccd_handle = p_desc_disc_rsp->descs[i].handle;
+    //         printf("desc handle 0x%x\n", _char_desc_cccd_handle);
+
+    //         _connected_and_ready = true;
+    //         // write_http_string();
+    //         //
+    //         //
+    //         // do_post();
+    //         break;
+    //       }
+    //     }
+    //   }
+    //   break;
+    // }
 
     case BLE_GATTC_EVT_WRITE_RSP: {
       if (p_ble_evt->evt.gattc_evt.gatt_status != BLE_GATT_STATUS_SUCCESS) {
@@ -434,6 +504,29 @@ void ble_evt_user_handler (ble_evt_t* p_ble_evt) {
       break;
     }
 
+    case BLE_GAP_EVT_ADV_REPORT: {
+      led_toggle(2);
+
+
+      const ble_gap_evt_t* p_gap_evt = &p_ble_evt->evt.gap_evt;
+      const ble_gap_evt_adv_report_t* p_adv_report = &p_gap_evt->params.adv_report;
+
+      if (is_blehttp_service_present(p_adv_report)) {
+        char device_name[31] = {'?'};
+        extract_name(p_adv_report, device_name);
+        printf("found %s\n", device_name);
+
+        err_code = sd_ble_gap_connect(&p_adv_report->peer_addr,
+                                      &m_scan_param,
+                                      &m_connection_param);
+
+        if (err_code != NRF_SUCCESS) {
+          printf("error connecting to device %li.\n", err_code);
+        }
+      }
+      break;
+    }
+
     default:
       printf("event 0x%x\n", p_ble_evt->header.evt_id);
   }
@@ -443,54 +536,17 @@ void ble_error (uint32_t error_code) {
   printf("BLE ERROR: Code = 0x%x\n", (int)error_code);
 }
 
-
-
-
-static bool is_blehttp_service_present(const ble_gap_evt_adv_report_t *p_adv_report) {
-  uint32_t index = 0;
-  uint8_t *p_data = (uint8_t *)p_adv_report->data;
-
-  while (index < p_adv_report->dlen) {
-    uint8_t field_length = p_data[index];
-    uint8_t field_type   = p_data[index+1];
-
-    if ((field_type == BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_MORE_AVAILABLE ||
-         field_type == BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_COMPLETE) &&
-        (field_length - 1 == 16 &&
-         memcmp(blehttp_service_id, &p_data[index + 2], 16) == 0)) {
-
-      printf("Connecting to target %02x%02x%02x%02x%02x%02x\n",
-                       p_adv_report->peer_addr.addr[0],
-                       p_adv_report->peer_addr.addr[1],
-                       p_adv_report->peer_addr.addr[2],
-                       p_adv_report->peer_addr.addr[3],
-                       p_adv_report->peer_addr.addr[4],
-                       p_adv_report->peer_addr.addr[5]
-                       );
-
-      return true;
-    }
-    index += field_length + 1;
-  }
-  return false;
+static void ble_evt_dispatch_me(ble_evt_t * p_ble_evt) {
+  on_ble_evt_me(p_ble_evt);
+  ble_conn_params_on_ble_evt(p_ble_evt);
 }
 
-static void extract_name(const ble_gap_evt_adv_report_t *p_adv_report, char* buffer) {
-  uint32_t index = 0;
-  uint8_t *p_data = (uint8_t *)p_adv_report->data;
-  ble_uuid_t extracted_uuid;
 
-  while (index < p_adv_report->dlen) {
-    uint8_t field_length = p_data[index];
-    uint8_t field_type   = p_data[index+1];
 
-    if ((field_type == BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME)
-        || (field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME)) {
-      memcpy(buffer, &p_data[index+2], field_length-1);
-    }
-    index += field_length + 1;
-  }
-}
+
+
+
+
 
 void blehttp_init (void) {
   ble_uuid128_t base_uuid = BLEHTTP_BASE_UUID;
@@ -501,59 +557,35 @@ void blehttp_init (void) {
 
 
 
-void ble_evt_adv_report (ble_evt_t* p_ble_evt) {
-  uint32_t err_code;
-  led_toggle(2);
-
-
-  const ble_gap_evt_t* p_gap_evt = &p_ble_evt->evt.gap_evt;
-  const ble_gap_evt_adv_report_t* p_adv_report = &p_gap_evt->params.adv_report;
-
-  if (is_blehttp_service_present(p_adv_report)) {
-    char device_name[31] = {'?'};
-    extract_name(p_adv_report, device_name);
-    printf("found %s\n", device_name);
-
-    err_code = sd_ble_gap_connect(&p_adv_report->peer_addr,
-                                  &m_scan_param,
-                                  &m_connection_param);
-
-    if (err_code != NRF_SUCCESS) {
-      printf("error connecting to device %li.\n", err_code);
-    }
-  }
-}
 
 void connect_to_gateway (void) {
   uint32_t err_code;
 
-  err_code = sd_ble_gap_scan_stop();
-  err_code = sd_ble_gap_scan_start(&m_scan_param);
-  // It is okay to ignore this error since we are stopping the scan anyway.
-  if (err_code != NRF_ERROR_INVALID_STATE) {
-    APP_ERROR_CHECK(err_code);
-  }
-}
+  // err_code = sd_ble_gap_scan_stop();
+  // err_code = sd_ble_gap_scan_start(&m_scan_param);
+  // // It is okay to ignore this error since we are stopping the scan anyway.
+  // if (err_code != NRF_ERROR_INVALID_STATE) {
+  //   APP_ERROR_CHECK(err_code);
+  // }
 
-void do_post (void) {
-  init_post(10);
-  write_http_string();
+  ble_uuid_t adv_uuid = {0x0005, BLE_UUID_TYPE_VENDOR_BEGIN};
+  simple_adv_service(&adv_uuid);
 }
 
 void sensing_timer_callback (int a, int b, int c, void* ud) {
-  printf("cb\n");
-  if (_connected_and_ready && _blehttp_state == BLEHTTP_STATE_IDLE) {
+  printf("cb %i %i\n", _connected_and_ready, _blehttp_state);
+  if (_blehttp_state == BLEHTTP_STATE_IDLE) {
     int light = isl29035_read_light_intensity();
     printf("send %i\n", light);
     init_post(light);
-    write_http_string();
+    connect_to_gateway();
   }
 }
 
 void start_sensing () {
   printf("start sensing\n");
   while(1) {
-    delay_ms(5000);
+    delay_ms(10000);
     sensing_timer_callback(0, 0, 0, NULL);
   }
   // timer_in(5000, sensing_timer_callback, NULL);
@@ -569,13 +601,15 @@ int main (void) {
 
   printf("[BLE] Find Gateway\n");
 
-  // init_post();
-
   simple_ble_init(&ble_config);
 
+  // Re-register the callback so that we use our handler and not simple ble's.
+  err_code = softdevice_ble_evt_handler_set(ble_evt_dispatch_me);
+  APP_ERROR_CHECK(err_code);
+
+  // Setup the BLE HTTP library.
   blehttp_init();
 
-  connect_to_gateway();
-
+  // Start a loop.
   start_sensing();
 }
