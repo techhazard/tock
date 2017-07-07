@@ -3,6 +3,8 @@
 # Specify this directory relative to the current application.
 TOCK_USERLAND_BASE_DIR = ../..
 
+CFLAGS += -DBLE_STACK_SUPPORT_REQD=1
+
 # Which files to compile.
 C_SRCS := $(wildcard *.c)
 

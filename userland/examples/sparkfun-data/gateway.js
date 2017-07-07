@@ -3,7 +3,7 @@
 // including the bleno library (which is included from eddystone-beacon).
 process.env['BLENO_ADVERTISING_INTERVAL'] = 1000;
 
-
+// Needed to allow us to use both noble and bleno
 process.env['NOBLE_MULTI_ROLE'] = 1;
 
 var http       = require('http');
@@ -16,23 +16,6 @@ var noble      = require('noble');
 var request    = require('request');
 
 
-// var req = 'GET https://j2x.us/\n\
-// host: j2x.us';
-
-// console.log(req);
-
-// var a = httpparser.parseRequest(req);
-// console.log(a);
-
-// if (!a.uri.startsWith('h')) {
-// 	a.uri = 'http://' + a.headers.host + a.uri;
-// }
-
-// request(a, function (error, response, body) {
-// 	console.log('error:', error);
-// 	console.log('statusCode:', response && response.statusCode);
-// 	console.log('body:', body);
-// });
 
 var DEVICE_NAME         = 'http-gateway';
 var SERVICE_UUID        = '16ba0001cf44461eb8894f9a90f6b330';
@@ -40,12 +23,8 @@ var CHARACTERISTIC_UUID = '16ba0002cf44461eb8894f9a90f6b330';
 
 var WANTSERVER_UUID = '16ba0005cf44461eb8894f9a90f6b330';
 
+
 var _notify_callback = null;
-
-var _bleno_state = null;
-var _bleno_setup_timer = null;
-
-
 var _body = 'adf';
 
 function setup_services () {
