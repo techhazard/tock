@@ -17,28 +17,90 @@ var request    = require('request');
 
 
 
-var DEVICE_NAME         = 'http-gateway';
-var SERVICE_UUID        = '16ba0001cf44461eb8894f9a90f6b330';
-var CHARACTERISTIC_UUID = '16ba0002cf44461eb8894f9a90f6b330';
+var DEVICE_NAME       = 'http-gateway';
 
-var WANTSERVER_UUID = '16ba0005cf44461eb8894f9a90f6b330';
+// Main HTTP over BLE service.
+var SERVICE_UUID      = '16ba0001cf44461eb8894f9a90f6b330';
+// Characteristic for doing an HTTP request.
+var CHAR_HTTP_UUID    = '16ba0002cf44461eb8894f9a90f6b330';
+// Characteristic for doing an HTTPS request.
+var CHAR_HTTPS_UUID   = '16ba0003cf44461eb8894f9a90f6b330';
+// Characteristic for reading the HTTP response body.
+var CHAR_BODY_UUID    = '16ba0004cf44461eb8894f9a90f6b330';
+// Characteristic for reading the HTTP response headers.
+var CHAR_HEADERS_UUID = '16ba0005cf44461eb8894f9a90f6b330';
+// UUID that says the device is looking for a HTTP over BLE gateway.
+var WANTSERVER_UUID   = '16ba0006cf44461eb8894f9a90f6b330';
 
 
-var _notify_callback = null;
-var _body = 'adf';
+var _notify_headers_callback = null;
+var _notify_body_callback = null;
+var _headers = '';
+var _body = '';
+
+function do_request(http_string, mode) {
+	var http_request = httpparser.parseRequest(http_string);
+
+	if (!http_request.uri.startsWith(mode + '://')) {
+		var host = '';
+		if ('Host' in http_request.headers) {
+			host = http_request.headers.Host;
+		} else if ('host' in http_request.headers) {
+			host = http_request.headers.host;
+		}
+		http_request.uri = mode + '://' + host + http_request.uri;
+	}
+
+	request(http_request, function (error, response, body) {
+		if (error) {
+			debug('Error performing ' + mode + ' request.');
+			debug(error);
+		} else {
+			_headers = response.headers;
+			_body = body;
+			if (_notify_headers_callback) {
+				_notify_headers_callback(Buffer.from('headers'));
+			}
+			if (_notify_body_callback) {
+				_notify_body_callback(Buffer.from('body'));
+			}
+		}
+	});
+}
 
 function setup_services () {
-	console.log('setup services')
+	debug('Setting up services.');
+
 	bleno.setServices([
 		new bleno.PrimaryService({
 			uuid: SERVICE_UUID,
 			characteristics: [
 				new bleno.Characteristic({
-					uuid: CHARACTERISTIC_UUID,
-					properties: ['read', 'write', 'writeWithoutResponse', 'notify'],
+					uuid: CHAR_HTTP_UUID,
+					properties: ['write', 'writeWithoutResponse'],
+					onWriteRequest: function(data, offset, withoutResponse, callback) {
+						console.log('wrote')
+						var msg = data.toString('utf-8');
+						do_request(msg, 'http');
+						callback(bleno.Characteristic.RESULT_SUCCESS);
+					}
+				}),
+				new bleno.Characteristic({
+					uuid: CHAR_HTTPS_UUID,
+					properties: ['write', 'writeWithoutResponse'],
+					onWriteRequest: function(data, offset, withoutResponse, callback) {
+						console.log('wrote')
+						var msg = data.toString('utf-8');
+						do_request(msg, 'https');
+						callback(bleno.Characteristic.RESULT_SUCCESS);
+					}
+				}),
+				new bleno.Characteristic({
+					uuid: CHAR_BODY_UUID,
+					properties: ['read', 'notify'],
 					onReadRequest: function (offset, callback) {
 						if (offset == 0) {
-							debug('Read characteristic.');
+							debug('Read body characteristic.');
 						}
 
 						var body = Buffer.from(_body);
@@ -49,64 +111,44 @@ function setup_services () {
 
 						callback(bleno.Characteristic.RESULT_SUCCESS, ret);
 					},
-					onWriteRequest: function(data, offset, withoutResponse, callback) {
-						console.log('got write')
-						console.log(data)
-
-						var msg = data.toString('utf-8');
-						console.log(msg);
-						var b = httpparser.parseRequest(msg);
-
-
-						if (!b.uri.startsWith('h')) {
-							var host = '';
-							if ('Host' in b.headers) {
-								host = b.headers.Host;
-							} else if ('host' in b.headers) {
-								host = b.headers.host;
-							} else {
-								console.log('no host??');
-							}
-							b.uri = 'https://' + host + b.uri;
+					onSubscribe: function (maxValueSize, updateValueCallback) {
+						debug('subscribe characteristic');
+						_notify_body_callback = updateValueCallback;
+					},
+					onUnsubscribe: function () {
+						_notify_body_callback = null;
+					}
+				}),
+				new bleno.Characteristic({
+					uuid: CHAR_HEADERS_UUID,
+					properties: ['read', 'notify'],
+					onReadRequest: function (offset, callback) {
+						if (offset == 0) {
+							debug('Read headers characteristic.');
 						}
-						console.log(b);
 
+						var body = Buffer.from(_headers);
+						var ret = Buffer.from('');
+						if (offset < body.length) {
+							ret = body.slice(offset);
+						}
 
-						request(b, function (error, response, body) {
-							if (error) {
-								console.log(error);
-							} else if (response.statusCode == 200) {
-								console.log('error:', error);
-								console.log('statusCode:', response && response.statusCode);
-								console.log('headers:', response.headers);
-								console.log('body:', body);
-								console.log(typeof body);
-
-								_body = body;
-								if (_notify_callback) {
-									_notify_callback(Buffer.from('ready!'));
-								}
-							} else {
-								console.log('nooo');
-							}
-						});
-
-						callback(bleno.Characteristic.RESULT_SUCCESS);
+						callback(bleno.Characteristic.RESULT_SUCCESS, ret);
 					},
 					onSubscribe: function (maxValueSize, updateValueCallback) {
 						debug('subscribe characteristic');
-						_notify_callback = updateValueCallback;
+						_notify_headers_callback = updateValueCallback;
 					},
 					onUnsubscribe: function () {
-						_notify_callback = null;
+						_notify_headers_callback = null;
 					}
 				})
 			]
 		})
 	], function (error2) {
 		if (error2) {
-			console.log('error creating services');
-			console.log(error2);
+			debug('error creating services');
+			debug(error2);
 		}
 	});
 }

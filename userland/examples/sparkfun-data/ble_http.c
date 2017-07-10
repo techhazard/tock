@@ -41,8 +41,9 @@ simple_ble_config_t _ble_config = {
 // Properties of the BLE HTTP service.
 #define BLEHTTP_BASE_UUID {0x30, 0xb3, 0xf6, 0x90, 0x9a, 0x4f, 0x89, 0xb8, 0x1e, 0x46, 0x44, 0xcf, 0x01, 0x00, 0xba, 0x16}
 #define BLE_UUID_BLEHTTP_SERVICE     0x0001
-#define BLE_UUID_BLEHTTP_CHAR        0x0002
-#define BLE_UUID_BLEHTTP_WANTED_CHAR 0x0005
+#define BLE_UUID_BLEHTTP_HTTPS_CHAR  0x0003
+#define BLE_UUID_BLEHTTP_BODY_CHAR   0x0004
+#define BLE_UUID_BLEHTTP_WANTED_CHAR 0x0006
 
 #define MIN_CONNECTION_INTERVAL MSEC_TO_UNITS(10, UNIT_1_25_MS)
 #define MAX_CONNECTION_INTERVAL MSEC_TO_UNITS(10, UNIT_1_25_MS)
@@ -77,8 +78,9 @@ char* _http_mesage = NULL;
 int _http_len = 0;
 
 uint16_t _conn_handle = BLE_CONN_HANDLE_INVALID;
-uint16_t _char_handle = 0;
-uint16_t _char_desc_cccd_handle = 0;
+uint16_t _char_handle_https = 0;
+uint16_t _char_handle_body = 0;
+uint16_t _char_desc_cccd_handle_body = 0;
 
 
 
@@ -112,7 +114,7 @@ static void __write_http_string_loop (void) {
       buf[1] = 0;
 
       write_params.write_op = BLE_GATT_OP_WRITE_REQ;
-      write_params.handle   = _char_desc_cccd_handle;
+      write_params.handle   = _char_desc_cccd_handle_body;
       write_params.offset   = 0;
       write_params.len      = sizeof(buf);
       write_params.p_value  = buf;
@@ -128,7 +130,7 @@ static void __write_http_string_loop (void) {
         len = 18;
       }
 
-      write_params.handle     = _char_handle;
+      write_params.handle     = _char_handle_https;
       write_params.write_op   = BLE_GATT_OP_PREP_WRITE_REQ;
       write_params.offset     = _write_offset;
       write_params.len        = len;
@@ -142,7 +144,7 @@ static void __write_http_string_loop (void) {
     }
 
     case WRITE_STATE_EXECUTE_WRITE: {
-      write_params.handle     = _char_handle;
+      write_params.handle     = _char_handle_https;
       write_params.write_op   = BLE_GATT_OP_EXEC_WRITE_REQ;
       write_params.flags      = BLE_GATT_EXEC_WRITE_FLAG_PREPARED_WRITE;
       _write_state = WRITE_STATE_DONE;
@@ -178,7 +180,7 @@ static void __start_read (void) {
   _body_len = 0;
 
   // do a read to get the data
-  err_code = sd_ble_gattc_read(_conn_handle, _char_handle, 0);
+  err_code = sd_ble_gattc_read(_conn_handle, _char_handle_body, 0);
   if (err_code != NRF_SUCCESS) {
     printf("error doing read %li\n", err_code);
   }
@@ -194,7 +196,7 @@ static void __continue_read (const ble_gattc_evt_read_rsp_t* p_read_rsp) {
   }
 
   if (p_read_rsp->len == 22) {
-    err_code = sd_ble_gattc_read(_conn_handle, _char_handle, p_read_rsp->offset + p_read_rsp->len);
+    err_code = sd_ble_gattc_read(_conn_handle, _char_handle_body, p_read_rsp->offset + p_read_rsp->len);
     if (err_code != NRF_SUCCESS) {
       printf("error doing read %li\n", err_code);
     }
@@ -295,25 +297,51 @@ static void __on_ble_evt (ble_evt_t* p_ble_evt) {
         const ble_gattc_evt_char_disc_rsp_t* p_char_disc_rsp;
         p_char_disc_rsp = &(p_ble_evt->evt.gattc_evt.params.char_disc_rsp);
 
-        ble_uuid_t httpget_characteristic_uuid = {
-          .uuid = BLE_UUID_BLEHTTP_CHAR,
+        ble_uuid_t httpget_https_characteristic_uuid = {
+          .uuid = BLE_UUID_BLEHTTP_HTTPS_CHAR,
           .type = BLE_UUID_TYPE_VENDOR_BEGIN,
         };
+        ble_uuid_t httpget_body_characteristic_uuid = {
+          .uuid = BLE_UUID_BLEHTTP_BODY_CHAR,
+          .type = BLE_UUID_TYPE_VENDOR_BEGIN,
+        };
+        // printf("looking for char %i\n", p_char_disc_rsp->count);
 
         // Iterate through the characteristics and find the correct one.
+        uint16_t last_handle = 0;
         for (int i = 0; i < p_char_disc_rsp->count; i++) {
-          // printf("char: uuid: 0x%x type: 0x%x\n", p_char_disc_rsp->chars[i].uuid.uuid, p_char_disc_rsp->chars[i].uuid.type);
-          if (BLE_UUID_EQ(&httpget_characteristic_uuid, &(p_char_disc_rsp->chars[i].uuid))) {
-            _char_handle = p_char_disc_rsp->chars[i].handle_value;
-            // printf("found char handle 0x%x\n", _char_handle);
+          // printf("char uuid %i\n", p_char_disc_rsp->chars[i].uuid.uuid);
+          if (BLE_UUID_EQ(&httpget_https_characteristic_uuid, &(p_char_disc_rsp->chars[i].uuid))) {
+            _char_handle_https = p_char_disc_rsp->chars[i].handle_value;
+            // printf("found https char handle 0x%x\n", _char_handle_https);
+
+          } else if (BLE_UUID_EQ(&httpget_body_characteristic_uuid, &(p_char_disc_rsp->chars[i].uuid))) {
+            _char_handle_body = p_char_disc_rsp->chars[i].handle_value;
+            // printf("found body char handle 0x%x\n", _char_handle_body);
 
             // Descriptor handle is predictable.
-            _char_desc_cccd_handle = _char_handle + 1;
-
-            // Start write loop to send the HTTP message.
-            __write_http_string();
-            break;
+            _char_desc_cccd_handle_body = _char_handle_body + 1;
           }
+
+          // Save this so we know where to keep searching from when we continue.
+          last_handle = p_char_disc_rsp->chars[i].handle_value;
+        }
+
+        if (_char_handle_https == 0 || _char_handle_body == 0) {
+          // Are not done discovering, keep looking.
+          ble_gattc_handle_range_t p_service_handle_range = {
+            .start_handle = last_handle + 1,
+            .end_handle = last_handle + 11,
+          };
+
+          err_code = sd_ble_gattc_characteristics_discover(_conn_handle, &p_service_handle_range);
+          if (err_code != NRF_SUCCESS) {
+            printf("error discover char loop 0x%lx\n", err_code);
+          }
+
+        } else {
+          // Start write loop to send the HTTP message.
+          __write_http_string();
         }
       }
       break;
@@ -341,7 +369,7 @@ static void __on_ble_evt (ble_evt_t* p_ble_evt) {
         // printf("notify handle: 0x%x\n", p_hvx_evt->handle);
 
         // When we get a notification we know the response is ready to read.
-        if (p_hvx_evt->handle == _char_handle) {
+        if (p_hvx_evt->handle == _char_handle_body) {
           // printf("got notification for handle we know\n");
           __start_read();
         }
@@ -363,6 +391,8 @@ static void __on_ble_evt (ble_evt_t* p_ble_evt) {
 
     case BLE_GAP_EVT_DISCONNECTED: {
       _conn_handle = BLE_CONN_HANDLE_INVALID;
+      _char_handle_https = 0;
+      _char_handle_body = 0;
       break;
     }
 
