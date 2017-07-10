@@ -2,9 +2,9 @@
 
 #include <nrf_error.h>
 
+#include <isl29035.h>
 #include <timer.h>
 #include <tock.h>
-#include <isl29035.h>
 
 #include "adafruit.io.h"
 #include "ble_http.h"
@@ -16,8 +16,8 @@ void start_sensing (void);
 char _post[512];
 int _post_len = 0;
 
-char AIO_KEY[] =  "3e83a80b0ed94a338a3b3d26998b0dbe";
-char USERNAME[] = "bradjc";
+char AIO_KEY[]   =  "3e83a80b0ed94a338a3b3d26998b0dbe";
+char USERNAME[]  = "bradjc";
 char FEED_NAME[] = "hail-test";
 
 
@@ -38,7 +38,7 @@ void sensing_timer_callback (__attribute__ ((unused)) int a,
 
 void start_sensing (void) {
   printf("start sensing\n");
-  while(1) {
+  while (1) {
     delay_ms(10000);
     sensing_timer_callback(0, 0, 0, NULL);
   }
