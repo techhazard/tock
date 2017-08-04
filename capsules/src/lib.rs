@@ -46,9 +46,9 @@ pub mod app_flash_driver;
 pub mod usb;
 pub mod usb_user;
 pub mod usbc_client;
-#[macro_use]
 pub mod net;
 pub mod ieee802154;
 pub mod temperature;
 pub mod humidity;
 //pub mod nrf_internal_temp_sensor;
+pub mod bootloader;
