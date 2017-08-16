@@ -36,12 +36,20 @@ impl<'a> QueuedCall<'a> {
         self.queue.queued_calls.push_head(self);
     }
 
-    pub fn set_active(&'a self) {
+    // Returns true if it was inserted, false if it was already
+    // in the queue.
+    pub fn insert(&'a self) -> bool {
+        let rval = !self.active.get();
         self.active.set(true);
+        rval
     }
 
-    pub fn set_inactive(&'a self) {
+    // Returns true if removed from the queue, false if it was not
+    // in the queue.
+    pub fn remove(&'a self) -> bool {
+        let rval = self.active.get();
         self.active.set(false);
+        rval
     }
 }
 
