@@ -72,7 +72,7 @@ impl<'a> CallQueue<'a> {
     // triggered (or None, if it was the tail of the queue).
     // It keeps track of the 'first' active element before
     // the 'next' element. It then walks forward from next,
-    // triggering the first active element. If it reaches the
+    // triggering the earlist active element. If it reaches the
     // end of the queue, it triggers 'first' if there is one,
     // or returns false if there is no 'first' (no element in the
     // queue was marked active).
@@ -87,8 +87,10 @@ impl<'a> CallQueue<'a> {
         let mut passed = false;
         let mut first = None;
         for call in self.queued_calls.iter() {
+            // Haven't passed next
             if !passed {
-                if call as *const QueuedCall == self.next.get().unwrap() as *const QueuedCall {    
+                // Reached next
+                if call as *const QueuedCall == self.next.get().unwrap() as *const QueuedCall {
                     passed = true;
                     self.next.set(None);
                     if call.active.get() {
@@ -97,10 +99,10 @@ impl<'a> CallQueue<'a> {
                        call.callback.get().map(|c| c.dequeued());
                     }
                 } else if call.active.get() && first.is_none() {
+                    // We're before next, so set first
                     first = Some(call);
                 }
-            }
-            else if next {
+            } else if next { // Previous item triggered, so set next
                 self.next.set(Some(call));
                 return true;
             } else if call.active.get() {
