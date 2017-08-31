@@ -1,7 +1,7 @@
 //! Provide a queue-based callback for virtualizing OS abstractions.
 
-use core::cell::Cell;
 use common::list::{List, ListLink, ListNode};
+use core::cell::Cell;
 
 pub trait Dequeued {
     fn dequeued(&self);
@@ -70,25 +70,25 @@ impl<'a> CallQueue<'a> {
     // a linear scan of the list, starting at the front. It
     // keeps a reference to the 'next' element after the last one
     // triggered (or None, if it was the tail of the queue).
-    // It keeps track of the 'last' active element before
+    // It keeps track of the 'first' active element before
     // the 'next' element. It then walks forward from next,
     // triggering the first active element. If it reaches the
-    // end of the queue, it triggers 'last' if there is one,
-    // or returns false if there is no 'last' (no element in the
+    // end of the queue, it triggers 'first' if there is one,
+    // or returns false if there is no 'first' (no element in the
     // queue was marked active).
     pub fn dequeue_and_trigger(&self) -> bool {
         // If the last scan reached the end of the queue,
         // set the first element to look at to be the first element
-        // of the queue (could be None if queue is empty).
+        // of the queue.
         if self.next.get().is_none() {
             self.next.set(self.queued_calls.head());
         }
-        let mut next = false; // Do we need to set next element?
-        let mut passed = false; // Have we passed next element?
-        let mut last = self.queued_calls.head(); // Last element 
+        let mut next = false;
+        let mut passed = false;
+        let mut first = None;
         for call in self.queued_calls.iter() {
             if !passed {
-                if call as *const QueuedCall == self.next.get().unwrap() as *const QueuedCall {
+                if call as *const QueuedCall == self.next.get().unwrap() as *const QueuedCall {    
                     passed = true;
                     self.next.set(None);
                     if call.active.get() {
@@ -96,8 +96,8 @@ impl<'a> CallQueue<'a> {
                        call.active.set(false);
                        call.callback.get().map(|c| c.dequeued());
                     }
-                } else if call.active.get() {
-                    last = Some(call);
+                } else if call.active.get() && first.is_none() {
+                    first = Some(call);
                 }
             }
             else if next {
@@ -110,13 +110,11 @@ impl<'a> CallQueue<'a> {
                 self.next.set(None);
             }
         }
-        if last.is_some() {
-            let val = last.unwrap();
-            if val.active.get() {
-                val.active.set(false);
-                val.callback.get().map(|c| c.dequeued());
-                return true;
-            }
+        if first.is_some() {
+            let val = first.unwrap();
+            val.active.set(false);
+            val.callback.get().map(|c| c.dequeued());
+            return true;
         }
         next
     }
