@@ -31,7 +31,7 @@ impl<'a> QueuedCall<'a> {
         }
     }
 
-//    pub fn new(queue: &'a CallQueue<'a>, cb: &'a Dequeued
+    //    pub fn new(queue: &'a CallQueue<'a>, cb: &'a Dequeued
 
     pub fn set_callback(&'a self, callback: &'a Dequeued<'a>) {
         self.callback.set(Some(callback));
@@ -100,15 +100,16 @@ impl<'a> CallQueue<'a> {
                     passed = true;
                     self.next.set(None);
                     if call.active.get() {
-                       next = true;
-                       call.active.set(false);
-                       call.callback.get().map(|c| c.dequeued());
+                        next = true;
+                        call.active.set(false);
+                        call.callback.get().map(|c| c.dequeued());
                     }
                 } else if call.active.get() && first.is_none() {
                     // We're before next, so set first
                     first = Some(call);
                 }
-            } else if next { // Previous item triggered, so set next
+            } else if next {
+                // Previous item triggered, so set next
                 self.next.set(Some(call));
                 return true;
             } else if call.active.get() {

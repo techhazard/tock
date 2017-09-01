@@ -8,15 +8,15 @@
 
 use core::cell::Cell;
 use kernel::ReturnCode;
-use kernel::common::virtualizer::{QueuedCall,CallQueue, Dequeued};
+use kernel::common::virtualizer::{QueuedCall, CallQueue, Dequeued};
+use kernel::hil::radio;
 use mac;
 use net::ieee802154::*;
-use kernel::hil::radio;
 
 pub struct RadioMux<'a, R: radio::Radio + 'a> {
     mac: &'a mac::MacDevice<'a, R>,
     busy: Cell<bool>,
-    queue: CallQueue<'a>
+    queue: CallQueue<'a>,
 }
 
 pub struct VirtualRadioDevice<'a, R: radio::Radio + 'a> {
@@ -60,7 +60,7 @@ impl<'a, R: radio::Radio> RadioMux<'a, R> {
     }
 }
 
-impl <'a, R: radio::Radio> VirtualRadioDevice<'a, R> {
+impl<'a, R: radio::Radio> VirtualRadioDevice<'a, R> {
     pub fn new(mux: &'a RadioMux<'a, R>) -> VirtualRadioDevice<'a, R> {
         VirtualRadioDevice {
             tx_buffer: Cell::new(None),
@@ -76,18 +76,17 @@ impl <'a, R: radio::Radio> VirtualRadioDevice<'a, R> {
     }
 }
 
-impl <'a, R: radio::Radio> mac::TxClient for VirtualRadioDevice<'a, R> {
-    fn send_done(&self, buf: &'static mut [u8],
-                 acked: bool, result: ReturnCode) {
+impl<'a, R: radio::Radio> mac::TxClient for VirtualRadioDevice<'a, R> {
+    fn send_done(&self, buf: &'static mut [u8], acked: bool, result: ReturnCode) {
         self.client.get().map(move |c| c.send_done(buf, acked, result));
         self.mux.clear_busy();
         self.mux.next();
     }
 }
 
-impl <'a, R: radio::Radio> Dequeued<'a> for VirtualRadioDevice<'a, R> {
+impl<'a, R: radio::Radio> Dequeued<'a> for VirtualRadioDevice<'a, R> {
     fn id(&'a self) -> u32 {
-      0
+        0
     }
     fn dequeued(&'a self) {
         self.mux.set_transmit_client(self);
@@ -95,20 +94,44 @@ impl <'a, R: radio::Radio> Dequeued<'a> for VirtualRadioDevice<'a, R> {
     }
 }
 
-impl <'a, R: radio::Radio> mac::Mac for VirtualRadioDevice<'a, R> {
-    fn get_address(&self) -> u16 {self.mux.mac.get_address()}
-    fn get_address_long(&self) -> [u8; 8] {self.mux.mac.get_address_long()}
-    fn get_pan(&self) -> u16 {self.mux.mac.get_pan()}
-    fn get_channel(&self) -> u8 {self.mux.mac.get_channel()}
-    fn get_tx_power(&self) -> i8 {self.mux.mac.get_tx_power()}
-    fn set_address(&self, addr: u16) {self.mux.mac.set_address(addr);}
-    fn set_address_long(&self, addr: [u8; 8]) {self.mux.mac.set_address_long(addr);}
-    fn set_pan(&self, id: u16) {self.mux.mac.set_pan(id);}
-    fn set_channel(&self, chan: u8) -> ReturnCode {self.mux.mac.set_channel(chan)}
-    fn set_tx_power(&self, power: i8) -> ReturnCode {self.mux.mac.set_tx_power(power)}
+impl<'a, R: radio::Radio> mac::Mac for VirtualRadioDevice<'a, R> {
+    fn get_address(&self) -> u16 {
+        self.mux.mac.get_address()
+    }
+    fn get_address_long(&self) -> [u8; 8] {
+        self.mux.mac.get_address_long()
+    }
+    fn get_pan(&self) -> u16 {
+        self.mux.mac.get_pan()
+    }
+    fn get_channel(&self) -> u8 {
+        self.mux.mac.get_channel()
+    }
+    fn get_tx_power(&self) -> i8 {
+        self.mux.mac.get_tx_power()
+    }
+    fn set_address(&self, addr: u16) {
+        self.mux.mac.set_address(addr);
+    }
+    fn set_address_long(&self, addr: [u8; 8]) {
+        self.mux.mac.set_address_long(addr);
+    }
+    fn set_pan(&self, id: u16) {
+        self.mux.mac.set_pan(id);
+    }
+    fn set_channel(&self, chan: u8) -> ReturnCode {
+        self.mux.mac.set_channel(chan)
+    }
+    fn set_tx_power(&self, power: i8) -> ReturnCode {
+        self.mux.mac.set_tx_power(power)
+    }
 
-    fn config_commit(&self) -> ReturnCode {self.mux.mac.config_commit()}
-    fn is_on(&self) -> bool {self.mux.mac.is_on()}
+    fn config_commit(&self) -> ReturnCode {
+        self.mux.mac.config_commit()
+    }
+    fn is_on(&self) -> bool {
+        self.mux.mac.is_on()
+    }
     fn prepare_data_frame(&self,
                           buf: &'static mut [u8],
                           dst_pan: PanID,
@@ -116,7 +139,7 @@ impl <'a, R: radio::Radio> mac::Mac for VirtualRadioDevice<'a, R> {
                           src_pan: PanID,
                           src_addr: MacAddress,
                           security_needed: Option<(SecurityLevel, KeyId)>)
-                          -> Result<mac:: Frame, &'static mut [u8]> {
+                          -> Result<mac::Frame, &'static mut [u8]> {
         self.mux.mac.prepare_data_frame(buf, dst_pan, dst_addr, src_pan, src_addr, security_needed)
     }
 
@@ -126,10 +149,9 @@ impl <'a, R: radio::Radio> mac::Mac for VirtualRadioDevice<'a, R> {
     fn transmit(&self, frame: mac::Frame) -> (ReturnCode, Option<&'static mut [u8]>) {
         return (ReturnCode::ENOSUPPORT, Some(frame.into_buf()));
     }
-
 }
 
-impl <'a, R: radio::Radio> VirtualTransmit<'a> for VirtualRadioDevice<'a, R> {
+impl<'a, R: radio::Radio> VirtualTransmit<'a> for VirtualRadioDevice<'a, R> {
     fn transmit(&'a self, frame: mac::Frame) -> (ReturnCode, Option<&'static mut [u8]>) {
         if self.queued_call.insert() {
             self.tx_buffer.set(Some(frame));
