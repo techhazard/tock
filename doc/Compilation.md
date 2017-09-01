@@ -21,6 +21,7 @@ of how platforms program each onto an actual board.
     + [Metadata](#metadata)
   * [Tock userland compilation environment](#tock-userland-compilation-environment)
     + [Compiling Libraries for Tock](#compiling-libraries-for-tock)
+      - [Development vs Stable Libraries](#development-vs-stable-libraries)
     + [Including other libraries](#including-other-libraries)
   * [Note for the Future](#note-for-the-future)
 - [Loading the kernel and processes onto a board](#loading-the-kernel-and-processes-onto-a-board)
@@ -382,6 +383,18 @@ the heavy lifting. Simply,
   2. `include $(TOCK_USERLAND_BASE_DIR)/TockLibrary.mk`.
 
 and add sources using the same variables as applications.
+
+##### Development vs Stable Libraries
+
+When developing a library, often it's useful to have the library rebuild automatically.
+In that case, simply include the library Makefile (i.e.
+`include $(TOCK_USERLAND_BASE_DIR)/libtock/Makefile`) in your application Makefile. For
+stable libraries, simply check in the built archive.
+
+There are examples of each in the Tock repository, libtock
+[builds with every application](https://github.com/helena-project/tock/blob/master/userland/AppMakefile.mk#L17)
+whereas libnrfserialization
+[ships a pre-built archive](https://github.com/helena-project/tock/tree/master/userland/libnrfserialization/build/cortex-m4).
 
 #### Including other libraries
 

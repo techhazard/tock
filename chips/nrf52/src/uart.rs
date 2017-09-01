@@ -1,13 +1,13 @@
-//! Author: Niklas Adolfsson <niklasadolfsson1@gmail.com>
-//! Date: July 8, 2017
+/// Author: Niklas Adolfsson <niklasadolfsson1@gmail.com>
+/// Date: July 8, 2017
 
 use chip;
 use core::cell::Cell;
 use kernel;
-use nvic;
-use peripheral_interrupts;
+use nrf5x::nvic;
+use nrf5x::peripheral_interrupts;
+use nrf5x::pinmux;
 use peripheral_registers;
-use pinmux;
 
 // this could potentially be replaced to point directly to
 // the WRITE_BUFFER in capsules::console::WRITE_BUFFER

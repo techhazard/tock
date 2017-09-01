@@ -3,20 +3,19 @@
 //! Usage
 //! -----
 //!
-//! You need a device that provides the `hil::ninedof::NineDof` trait.
+//! You need a device that provides the `hil::sensors::NineDof` trait.
 //!
 //! ``rust
 //! let ninedof = static_init!(
 //!     capsules::ninedof::NineDof<'static>,
 //!     capsules::ninedof::NineDof::new(fxos8700, kernel::Container::create()));
-//! hil::ninedof::NineDof::set_client(fxos8700, ninedof);
+//! hil::sensors::NineDof::set_client(fxos8700, ninedof);
 //! ```
 
 use core::cell::Cell;
 use kernel::{AppId, Callback, Container, Driver};
 use kernel::ReturnCode;
 use kernel::hil;
-use kernel::process::Error;
 
 
 #[derive(Clone,Copy,PartialEq)]
@@ -46,13 +45,13 @@ impl Default for App {
 }
 
 pub struct NineDof<'a> {
-    driver: &'a hil::ninedof::NineDof,
+    driver: &'a hil::sensors::NineDof,
     apps: Container<App>,
     current_app: Cell<Option<AppId>>,
 }
 
 impl<'a> NineDof<'a> {
-    pub fn new(driver: &'a hil::ninedof::NineDof, container: Container<App>) -> NineDof<'a> {
+    pub fn new(driver: &'a hil::sensors::NineDof, container: Container<App>) -> NineDof<'a> {
         NineDof {
             driver: driver,
             apps: container,
@@ -78,11 +77,7 @@ impl<'a> NineDof<'a> {
                     ReturnCode::SUCCESS
                 }
             })
-            .unwrap_or_else(|err| match err {
-                Error::OutOfMemory => ReturnCode::ENOMEM,
-                Error::AddressOutOfBounds => ReturnCode::EINVAL,
-                Error::NoSuchApp => ReturnCode::EINVAL,
-            })
+            .unwrap_or_else(|err| err.into())
     }
 
     fn call_driver(&self, command: NineDofCommand, _: usize) -> ReturnCode {
@@ -95,7 +90,7 @@ impl<'a> NineDof<'a> {
     }
 }
 
-impl<'a> hil::ninedof::NineDofClient for NineDof<'a> {
+impl<'a> hil::sensors::NineDofClient for NineDof<'a> {
     fn callback(&self, arg1: usize, arg2: usize, arg3: usize) {
         // Notify the current application that the command finished.
         // Also keep track of what just finished to see if we can re-use
@@ -146,11 +141,7 @@ impl<'a> Driver for NineDof<'a> {
                         app.callback = Some(callback);
                         ReturnCode::SUCCESS
                     })
-                    .unwrap_or_else(|err| match err {
-                        Error::OutOfMemory => ReturnCode::ENOMEM,
-                        Error::AddressOutOfBounds => ReturnCode::EINVAL,
-                        Error::NoSuchApp => ReturnCode::EINVAL,
-                    })
+                    .unwrap_or_else(|err| err.into())
             }
             _ => ReturnCode::ENOSUPPORT,
         }

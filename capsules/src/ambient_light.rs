@@ -3,20 +3,19 @@
 //! Usage
 //! -----
 //!
-//! You need a device that provides the `hil::ambient_light::AmbientLight` trait.
+//! You need a device that provides the `hil::sensors::AmbientLight` trait.
 //!
 //! ``rust
 //! let ninedof = static_init!(
-//!     capsules::ambient_light::AmbientLight<'static>,
-//!     capsules::ambient_light::AmbientLight::new(isl29035,
+//!     capsules::sensors::AmbientLight<'static>,
+//!     capsules::sensors::AmbientLight::new(isl29035,
 //!         kernel::Container::create()));
-//! hil::ambient_light::AmbientLight::set_client(isl29035, ambient_light);
+//! hil::sensors::AmbientLight::set_client(isl29035, ambient_light);
 //! ```
 
 use core::cell::Cell;
 use kernel::{AppId, Callback, Container, Driver, ReturnCode};
 use kernel::hil;
-use kernel::process::Error;
 
 /// Per-process metdata
 #[derive(Default)]
@@ -26,15 +25,13 @@ pub struct App {
 }
 
 pub struct AmbientLight<'a> {
-    sensor: &'a hil::ambient_light::AmbientLight,
+    sensor: &'a hil::sensors::AmbientLight,
     command_pending: Cell<bool>,
     apps: Container<App>,
 }
 
 impl<'a> AmbientLight<'a> {
-    pub fn new(sensor: &'a hil::ambient_light::AmbientLight,
-               container: Container<App>)
-               -> AmbientLight {
+    pub fn new(sensor: &'a hil::sensors::AmbientLight, container: Container<App>) -> AmbientLight {
         AmbientLight {
             sensor: sensor,
             command_pending: Cell::new(false),
@@ -54,11 +51,7 @@ impl<'a> AmbientLight<'a> {
                 }
                 ReturnCode::SUCCESS
             })
-            .unwrap_or_else(|err| match err {
-                Error::OutOfMemory => ReturnCode::ENOMEM,
-                Error::AddressOutOfBounds => ReturnCode::EINVAL,
-                Error::NoSuchApp => ReturnCode::EINVAL,
-            })
+            .unwrap_or_else(|err| err.into())
     }
 }
 
@@ -77,11 +70,7 @@ impl<'a> Driver for AmbientLight<'a> {
                         app.callback = Some(callback);
                         ReturnCode::SUCCESS
                     })
-                    .unwrap_or_else(|err| match err {
-                        Error::OutOfMemory => ReturnCode::ENOMEM,
-                        Error::AddressOutOfBounds => ReturnCode::EINVAL,
-                        Error::NoSuchApp => ReturnCode::EINVAL,
-                    })
+                    .unwrap_or_else(|err| err.into())
             }
             _ => ReturnCode::ENOSUPPORT,
         }
@@ -110,7 +99,7 @@ impl<'a> Driver for AmbientLight<'a> {
     }
 }
 
-impl<'a> hil::ambient_light::AmbientLightClient for AmbientLight<'a> {
+impl<'a> hil::sensors::AmbientLightClient for AmbientLight<'a> {
     fn callback(&self, lux: usize) {
         self.command_pending.set(false);
         self.apps.each(|app| if app.pending {
