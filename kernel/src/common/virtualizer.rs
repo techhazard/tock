@@ -3,14 +3,14 @@
 use common::list::{List, ListLink, ListNode};
 use core::cell::Cell;
 
-pub trait Dequeued {
-    fn dequeued(&self);
-    fn id(&self) -> u32;
+pub trait Dequeued<'a> {
+    fn dequeued(&'a self);
+    fn id(&'a self) -> u32;
 }
 
 pub struct QueuedCall<'a> {
     next: ListLink<'a, QueuedCall<'a>>,
-    callback: Cell<Option<&'a Dequeued>>,
+    callback: Cell<Option<&'a Dequeued<'a>>>,
     active: Cell<bool>,
     queue: &'a CallQueue<'a>,
 }
@@ -31,7 +31,9 @@ impl<'a> QueuedCall<'a> {
         }
     }
 
-    pub fn set_callback(&'a self, callback: &'a Dequeued) {
+//    pub fn new(queue: &'a CallQueue<'a>, cb: &'a Dequeued
+
+    pub fn set_callback(&'a self, callback: &'a Dequeued<'a>) {
         self.callback.set(Some(callback));
         self.queue.queued_calls.push_head(self);
     }
@@ -50,6 +52,10 @@ impl<'a> QueuedCall<'a> {
         let rval = self.active.get();
         self.active.set(false);
         rval
+    }
+
+    pub fn is_inserted(&'a self) -> bool {
+        self.active.get()
     }
 }
 

@@ -373,12 +373,12 @@ pub struct MacDevice<'a, R: radio::Radio + 'a> {
     /// current state should always remember to replace it along with the
     /// associated state information.
     tx_state: MapCell<TxState>,
-    tx_client: Cell<Option<&'static TxClient>>,
+    tx_client: Cell<Option<&'a TxClient>>,
 
     /// Reception pipeline state. Similar to the above, this should never be
     /// `None`, except when transitioning between states.
     rx_state: MapCell<RxState>,
-    rx_client: Cell<Option<&'static RxClient>>,
+    rx_client: Cell<Option<&'a RxClient>>,
 }
 
 impl<'a, R: radio::Radio + 'a> MacDevice<'a, R> {
@@ -393,11 +393,11 @@ impl<'a, R: radio::Radio + 'a> MacDevice<'a, R> {
         }
     }
 
-    pub fn set_transmit_client(&self, client: &'static TxClient) {
+    pub fn set_transmit_client(&self, client: &'a TxClient) {
         self.tx_client.set(Some(client));
     }
 
-    pub fn set_receive_client(&self, client: &'static RxClient) {
+    pub fn set_receive_client(&self, client: &'a RxClient) {
         self.rx_client.set(Some(client));
     }
 
