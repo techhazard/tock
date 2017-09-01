@@ -7,9 +7,7 @@
 //
 
 use core::cell::Cell;
-use core::cmp;
 use kernel::ReturnCode;
-use kernel::common::take_cell::{MapCell, TakeCell};
 use kernel::common::virtualizer::{QueuedCall,CallQueue, Dequeued};
 use mac;
 use net::ieee802154::*;
@@ -53,6 +51,10 @@ impl<'a, R: radio::Radio> RadioMux<'a, R> {
         ReturnCode::SUCCESS
     }
 
+    pub fn clear_busy(&self) {
+        self.busy.set(false);
+    }
+
     pub fn set_transmit_client(&self, client: &'a mac::TxClient) {
         self.mac.set_transmit_client(client);
     }
@@ -60,13 +62,12 @@ impl<'a, R: radio::Radio> RadioMux<'a, R> {
 
 impl <'a, R: radio::Radio> VirtualRadioDevice<'a, R> {
     pub fn new(mux: &'a RadioMux<'a, R>) -> VirtualRadioDevice<'a, R> {
-        let mut v = VirtualRadioDevice {
+        VirtualRadioDevice {
             tx_buffer: Cell::new(None),
             queued_call: QueuedCall::new(&mux.queue),
             mux: mux,
             client: Cell::new(None),
-        };
-        return v
+        }
     }
 
     pub fn init(&'a self, client: &'a mac::TxClient) {
@@ -79,6 +80,7 @@ impl <'a, R: radio::Radio> mac::TxClient for VirtualRadioDevice<'a, R> {
     fn send_done(&self, buf: &'static mut [u8],
                  acked: bool, result: ReturnCode) {
         self.client.get().map(move |c| c.send_done(buf, acked, result));
+        self.mux.clear_busy();
         self.mux.next();
     }
 }
