@@ -1,10 +1,13 @@
-#![feature(asm,concat_idents,const_fn)]
+#![feature(asm,concat_idents,const_fn,const_cell_new)]
 #![no_std]
 
 #[allow(unused_imports)]
 #[macro_use(debug)]
 extern crate kernel;
 extern crate nrf5x;
+
+#[macro_use]
+extern crate bitfield;
 
 use kernel::common::Queue;
 
@@ -20,6 +23,7 @@ pub mod nvmc;
 pub mod radio;
 pub mod uart;
 pub mod uicr;
+pub mod spi;
 
 
 #[no_mangle]

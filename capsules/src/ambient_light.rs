@@ -1,21 +1,19 @@
-//! Ambient light sensor system call driver
-//!
-//! Usage
-//! -----
-//!
 //! You need a device that provides the `hil::sensors::AmbientLight` trait.
 //!
 //! ``rust
 //! let ninedof = static_init!(
 //!     capsules::sensors::AmbientLight<'static>,
 //!     capsules::sensors::AmbientLight::new(isl29035,
-//!         kernel::Container::create()));
+//!         kernel::Grant::create()));
 //! hil::sensors::AmbientLight::set_client(isl29035, ambient_light);
 //! ```
 
 use core::cell::Cell;
-use kernel::{AppId, Callback, Container, Driver, ReturnCode};
+use kernel::{AppId, Callback, Grant, Driver, ReturnCode};
 use kernel::hil;
+
+/// Syscall number
+pub const DRIVER_NUM: usize = 0x60002;
 
 /// Per-process metdata
 #[derive(Default)]
@@ -27,15 +25,15 @@ pub struct App {
 pub struct AmbientLight<'a> {
     sensor: &'a hil::sensors::AmbientLight,
     command_pending: Cell<bool>,
-    apps: Container<App>,
+    apps: Grant<App>,
 }
 
 impl<'a> AmbientLight<'a> {
-    pub fn new(sensor: &'a hil::sensors::AmbientLight, container: Container<App>) -> AmbientLight {
+    pub fn new(sensor: &'a hil::sensors::AmbientLight, grant: Grant<App>) -> AmbientLight {
         AmbientLight {
             sensor: sensor,
             command_pending: Cell::new(false),
-            apps: container,
+            apps: grant,
         }
     }
 
@@ -87,7 +85,7 @@ impl<'a> Driver for AmbientLight<'a> {
     ///
     /// - `0`: Check driver presence
     /// - `1`: Start a light sensor reading
-    fn command(&self, command_num: usize, _arg1: usize, appid: AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, _arg1: usize, _: usize, appid: AppId) -> ReturnCode {
         match command_num {
             0 /* check if present */ => ReturnCode::SUCCESS,
             1 => {

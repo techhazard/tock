@@ -10,14 +10,17 @@
 //! ```rust
 //! let rng = static_init!(
 //!         capsules::rng::SimpleRng<'static, sam4l::trng::Trng>,
-//!         capsules::rng::SimpleRng::new(&sam4l::trng::TRNG, kernel::Container::create()));
+//!         capsules::rng::SimpleRng::new(&sam4l::trng::TRNG, kernel::Grant::create()));
 //! sam4l::trng::TRNG.set_client(rng);
 //! ```
 
 use core::cell::Cell;
-use kernel::{AppId, AppSlice, Container, Callback, Driver, ReturnCode, Shared};
+use kernel::{AppId, AppSlice, Grant, Callback, Driver, ReturnCode, Shared};
 use kernel::hil::rng;
 use kernel::process::Error;
+
+/// Syscall number
+pub const DRIVER_NUM: usize = 0x40001;
 
 pub struct App {
     callback: Option<Callback>,
@@ -39,15 +42,15 @@ impl Default for App {
 
 pub struct SimpleRng<'a, RNG: rng::RNG + 'a> {
     rng: &'a RNG,
-    apps: Container<App>,
+    apps: Grant<App>,
     getting_randomness: Cell<bool>,
 }
 
 impl<'a, RNG: rng::RNG> SimpleRng<'a, RNG> {
-    pub fn new(rng: &'a RNG, container: Container<App>) -> SimpleRng<'a, RNG> {
+    pub fn new(rng: &'a RNG, grant: Grant<App>) -> SimpleRng<'a, RNG> {
         SimpleRng {
             rng: rng,
-            apps: container,
+            apps: grant,
             getting_randomness: Cell::new(false),
         }
     }
@@ -157,7 +160,7 @@ impl<'a, RNG: rng::RNG> Driver for SimpleRng<'a, RNG> {
         }
     }
 
-    fn command(&self, command_num: usize, data: usize, appid: AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, data: usize, _: usize, appid: AppId) -> ReturnCode {
         match command_num {
             0 => /* Check if exists */ ReturnCode::SUCCESS,
 

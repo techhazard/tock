@@ -70,9 +70,12 @@
 // Date: March 31, 2017
 
 use core::cell::Cell;
-use kernel::{AppId, AppSlice, Container, Callback, Driver, ReturnCode, Shared};
+use kernel::{AppId, AppSlice, Grant, Callback, Driver, ReturnCode, Shared};
 use kernel::common::take_cell::TakeCell;
 use kernel::hil::symmetric_encryption::{SymmetricEncryption, Client};
+
+/// Syscall number
+pub const DRIVER_NUM: usize = 0x40000;
 
 pub static mut BUF: [u8; 128] = [0; 128];
 pub static mut KEY: [u8; 16] = [0; 16];
@@ -109,7 +112,7 @@ impl Default for App {
 
 pub struct Crypto<'a, E: SymmetricEncryption + 'a> {
     crypto: &'a E,
-    apps: Container<App>,
+    apps: Grant<App>,
     kernel_key: TakeCell<'static, [u8]>,
     kernel_data: TakeCell<'static, [u8]>,
     kernel_ctr: TakeCell<'static, [u8]>,
@@ -120,14 +123,14 @@ pub struct Crypto<'a, E: SymmetricEncryption + 'a> {
 
 impl<'a, E: SymmetricEncryption + 'a> Crypto<'a, E> {
     pub fn new(crypto: &'a E,
-               container: Container<App>,
+               grant: Grant<App>,
                key: &'static mut [u8],
                data: &'static mut [u8],
                ctr: &'static mut [u8])
                -> Crypto<'a, E> {
         Crypto {
             crypto: crypto,
-            apps: container,
+            apps: grant,
             kernel_key: TakeCell::new(key),
             kernel_data: TakeCell::new(data),
             kernel_ctr: TakeCell::new(ctr),
@@ -247,7 +250,7 @@ impl<'a, E: SymmetricEncryption> Driver for Crypto<'a, E> {
         }
     }
 
-    fn command(&self, cmd: usize, sub_cmd: usize, _: AppId) -> ReturnCode {
+    fn command(&self, cmd: usize, sub_cmd: usize, _: usize, _: AppId) -> ReturnCode {
         match cmd {
             // set key, it is assumed to 16, 24 or 32 bytes
             // e.g. aes-128, aes-128 and aes-256

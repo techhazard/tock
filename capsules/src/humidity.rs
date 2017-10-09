@@ -42,14 +42,17 @@
 //! let humidity = static_init!(
 //!        capsules::humidity::HumiditySensor<'static>,
 //!        capsules::humidity::HumiditySensor::new(si7021,
-//!                                                 kernel::Container::create()), 96/8);
+//!                                                 kernel::Grant::create()), 96/8);
 //! kernel::hil::sensors::HumidityDriver::set_client(si7021, humidity);
 //! ```
 
 use core::cell::Cell;
-use kernel::{AppId, Callback, Container, Driver};
+use kernel::{AppId, Callback, Grant, Driver};
 use kernel::ReturnCode;
 use kernel::hil;
+
+/// Syscall number
+pub const DRIVER_NUM: usize = 0x60001;
 
 #[derive(Clone,Copy,PartialEq)]
 pub enum HumidityCommand {
@@ -65,17 +68,15 @@ pub struct App {
 
 pub struct HumiditySensor<'a> {
     driver: &'a hil::sensors::HumidityDriver,
-    apps: Container<App>,
+    apps: Grant<App>,
     busy: Cell<bool>,
 }
 
 impl<'a> HumiditySensor<'a> {
-    pub fn new(driver: &'a hil::sensors::HumidityDriver,
-               container: Container<App>)
-               -> HumiditySensor<'a> {
+    pub fn new(driver: &'a hil::sensors::HumidityDriver, grant: Grant<App>) -> HumiditySensor<'a> {
         HumiditySensor {
             driver: driver,
-            apps: container,
+            apps: grant,
             busy: Cell::new(false),
         }
     }
@@ -130,7 +131,7 @@ impl<'a> Driver for HumiditySensor<'a> {
         }
     }
 
-    fn command(&self, command_num: usize, arg1: usize, appid: AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, arg1: usize, _: usize, appid: AppId) -> ReturnCode {
         match command_num {
 
             // check whether the driver exist!!

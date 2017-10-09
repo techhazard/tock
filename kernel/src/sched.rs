@@ -91,7 +91,7 @@ pub unsafe fn do_process<P: Platform, C: Chip>(platform: &P,
                 let res = if callback_ptr_raw as usize == 0 {
                     ReturnCode::EINVAL
                 } else {
-                    let callback_ptr = NonZero::new(callback_ptr_raw);
+                    let callback_ptr = NonZero::new_unchecked(callback_ptr_raw);
 
                     let callback = ::Callback::new(appid, appdata, callback_ptr);
                     platform.with_driver(driver_num, |driver| match driver {
@@ -103,7 +103,7 @@ pub unsafe fn do_process<P: Platform, C: Chip>(platform: &P,
             }
             Some(Syscall::COMMAND) => {
                 let res = platform.with_driver(process.r0(), |driver| match driver {
-                    Some(d) => d.command(process.r1(), process.r2(), appid),
+                    Some(d) => d.command(process.r1(), process.r2(), process.r3(), appid),
                     None => ReturnCode::ENODEVICE,
                 });
                 process.set_return_code(res);

@@ -30,7 +30,7 @@ that the callback exists.
 
     // Callback for button presses.
     //   btn_num: The index of the button associated with the callback
-    //   val:     0 if pressed, 1 if depressed
+    //   val:     1 if pressed, 0 if depressed
     static void button_callback(int btn_num,
                                 int val,
                                 int arg2 __attribute__ ((unused)),
@@ -61,7 +61,7 @@ kernel how many there are. This is done by calling `button_count()`.
 
     // Callback for button presses.
     //   btn_num: The index of the button associated with the callback
-    //   val:     0 if pressed, 1 if depressed
+    //   val:     1 if pressed, 0 if depressed
     static void button_callback(int btn_num,
                                 int val,
                                 int arg2 __attribute__ ((unused)),
@@ -100,13 +100,13 @@ kernel how many there are. This is done by calling `button_count()`.
 
     // Callback for button presses.
     //   btn_num: The index of the button associated with the callback
-    //   val:     0 if pressed, 1 if depressed
+    //   val:     1 if pressed, 0 if depressed
     static void button_callback(int btn_num,
                                 int val,
                                 int arg2 __attribute__ ((unused)),
                                 void *user_data __attribute__ ((unused)) ) {
       // Only print on the down press.
-      if (val == 0) {
+      if (val == 1) {
         printf("Hello!\n");
       }
     }
@@ -131,10 +131,13 @@ kernel how many there are. This is done by calling `button_count()`.
 
 5. **Run the application**. To try this tutorial application, you can find
 it in the [tutorials app folder](../../userland/examples/tutorials/02_button_print).
+See the [getting started README](../Getting_Started.md) how applications are installed on your board.
 In that directory:
 
     ```bash
-    $ make program
+    make program  # Load code via bootloader
+      -- or --    # Check the README in your board folder
+    make flash    # Load code via jtag
     ```
 
     Ensure there is already a kernel flashed onto the target board.

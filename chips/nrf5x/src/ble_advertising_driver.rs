@@ -72,6 +72,9 @@ use kernel;
 use kernel::hil::time::Frequency;
 use kernel::returncode::ReturnCode;
 
+/// Syscall Number
+pub const DRIVER_NUM: usize = 0x80_03_00_00;
+
 pub static mut BUF: [u8; 32] = [0; 32];
 
 
@@ -124,7 +127,7 @@ pub struct BLE<'a, B, A>
 {
     radio: &'a B,
     busy: Cell<bool>,
-    app: kernel::Container<App>,
+    app: kernel::Grant<App>,
     kernel_tx: kernel::common::take_cell::TakeCell<'static, [u8]>,
     alarm: &'a A,
     advertisement_interval: Cell<u32>,
@@ -137,7 +140,7 @@ impl<'a, B, A> BLE<'a, B, A>
           A: kernel::hil::time::Alarm + 'a
 {
     pub fn new(radio: &'a B,
-               container: kernel::Container<App>,
+               container: kernel::Grant<App>,
                tx_buf: &'static mut [u8],
                alarm: &'a A)
                -> BLE<'a, B, A> {
@@ -256,7 +259,7 @@ impl<'a, B, A> kernel::Driver for BLE<'a, B, A>
     where B: ble_advertising_hil::BleAdvertisementDriver + 'a,
           A: kernel::hil::time::Alarm + 'a
 {
-    fn command(&self, command_num: usize, data: usize, _: kernel::AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, data: usize, _: usize, _: kernel::AppId) -> ReturnCode {
         match (command_num, self.busy.get()) {
             // START BLE
             (0, false) => {

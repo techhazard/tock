@@ -42,14 +42,17 @@
 //! let temp = static_init!(
 //!        capsules::temperature::TemperatureSensor<'static>,
 //!        capsules::temperature::TemperatureSensor::new(si7021,
-//!                                                 kernel::Container::create()), 96/8);
+//!                                                 kernel::Grant::create()), 96/8);
 //! kernel::hil::sensors::TemperatureDriver::set_client(si7021, temp);
 //! ```
 
 use core::cell::Cell;
-use kernel::{AppId, Callback, Container, Driver};
+use kernel::{AppId, Callback, Grant, Driver};
 use kernel::ReturnCode;
 use kernel::hil;
+
+/// Syscall number
+pub const DRIVER_NUM: usize = 0x60000;
 
 #[derive(Default)]
 pub struct App {
@@ -59,17 +62,17 @@ pub struct App {
 
 pub struct TemperatureSensor<'a> {
     driver: &'a hil::sensors::TemperatureDriver,
-    apps: Container<App>,
+    apps: Grant<App>,
     busy: Cell<bool>,
 }
 
 impl<'a> TemperatureSensor<'a> {
     pub fn new(driver: &'a hil::sensors::TemperatureDriver,
-               container: Container<App>)
+               grant: Grant<App>)
                -> TemperatureSensor<'a> {
         TemperatureSensor {
             driver: driver,
-            apps: container,
+            apps: grant,
             busy: Cell::new(false),
         }
     }
@@ -117,7 +120,7 @@ impl<'a> Driver for TemperatureSensor<'a> {
         }
     }
 
-    fn command(&self, command_num: usize, _: usize, appid: AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, _: usize, _: usize, appid: AppId) -> ReturnCode {
         match command_num {
 
             // check whether the driver exists!!

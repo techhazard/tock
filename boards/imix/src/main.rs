@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(asm,const_fn,drop_types_in_const,lang_items,compiler_builtins_lib)]
+#![feature(asm,const_fn,lang_items,compiler_builtins_lib,const_cell_new)]
 
 extern crate capsules;
 extern crate compiler_builtins;
@@ -8,9 +8,9 @@ extern crate compiler_builtins;
 extern crate kernel;
 extern crate sam4l;
 
-use capsules::mac::Mac;
+use capsules::alarm::AlarmDriver;
+use capsules::ieee802154::mac::Mac;
 use capsules::rf233::RF233;
-use capsules::timer::TimerDriver;
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use capsules::virtual_i2c::{I2CDevice, MuxI2C};
 use capsules::virtual_spi::{VirtualSpiMasterDevice, MuxSpiMaster};
@@ -28,6 +28,8 @@ pub mod io;
 mod i2c_dummy;
 #[allow(dead_code)]
 mod spi_dummy;
+#[allow(dead_code)]
+mod lowpan_frag_dummy;
 
 #[allow(dead_code)]
 mod power;
@@ -51,7 +53,7 @@ type RF233Device = capsules::rf233::RF233<'static,
 struct Imix {
     console: &'static capsules::console::Console<'static, sam4l::usart::USART>,
     gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
-    timer: &'static TimerDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
+    alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
     temp: &'static capsules::temperature::TemperatureSensor<'static>,
     humidity: &'static capsules::humidity::HumiditySensor<'static>,
     ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
@@ -61,8 +63,7 @@ struct Imix {
     spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi>>,
     ipc: kernel::ipc::IPC,
     ninedof: &'static capsules::ninedof::NineDof<'static>,
-    radio: &'static capsules::radio::RadioDriver<'static,
-                                                 capsules::mac::MacDevice<'static, RF233Device>>,
+    radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
     crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
     usb_driver: &'static capsules::usb_user::UsbSyscallDriver<'static,
                         capsules::usbc_client::Client<'static, sam4l::usbc::Usbc<'static>>>,
@@ -91,22 +92,21 @@ impl kernel::Platform for Imix {
         where F: FnOnce(Option<&kernel::Driver>) -> R
     {
         match driver_num {
-            0 => f(Some(self.console)),
-            1 => f(Some(self.gpio)),
-
-            3 => f(Some(self.timer)),
-            4 => f(Some(self.spi)),
-            6 => f(Some(self.ambient_light)),
-            7 => f(Some(self.adc)),
-            8 => f(Some(self.led)),
-            9 => f(Some(self.button)),
-            10 => f(Some(self.temp)),
-            11 => f(Some(self.ninedof)),
-            16 => f(Some(self.crc)),
-            34 => f(Some(self.usb_driver)),
-            35 => f(Some(self.humidity)),
-            154 => f(Some(self.radio)),
-            0xff => f(Some(&self.ipc)),
+            capsules::console::DRIVER_NUM => f(Some(self.console)),
+            capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
+            capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules::spi::DRIVER_NUM => f(Some(self.spi)),
+            capsules::adc::DRIVER_NUM => f(Some(self.adc)),
+            capsules::led::DRIVER_NUM => f(Some(self.led)),
+            capsules::button::DRIVER_NUM => f(Some(self.button)),
+            capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
+            capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
+            capsules::humidity::DRIVER_NUM => f(Some(self.humidity)),
+            capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
+            capsules::crc::DRIVER_NUM => f(Some(self.crc)),
+            capsules::usb_user::DRIVER_NUM => f(Some(self.usb_driver)),
+            capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
+            kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             _ => f(None),
         }
     }
@@ -207,7 +207,7 @@ pub unsafe fn reset_handler() {
         capsules::console::Console::new(&sam4l::usart::USART3,
                      115200,
                      &mut capsules::console::WRITE_BUF,
-                     kernel::Container::create()));
+                     kernel::Grant::create()));
     hil::uart::UART::set_client(&sam4l::usart::USART3, console);
     console.initialize();
 
@@ -229,10 +229,10 @@ pub unsafe fn reset_handler() {
     let virtual_alarm1 = static_init!(
         VirtualMuxAlarm<'static, sam4l::ast::Ast>,
         VirtualMuxAlarm::new(mux_alarm));
-    let timer = static_init!(
-        TimerDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast>>,
-        TimerDriver::new(virtual_alarm1, kernel::Container::create()));
-    virtual_alarm1.set_client(timer);
+    let alarm = static_init!(
+        AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast>>,
+        AlarmDriver::new(virtual_alarm1, kernel::Grant::create()));
+    virtual_alarm1.set_client(alarm);
 
     // # I2C Sensors
 
@@ -255,7 +255,7 @@ pub unsafe fn reset_handler() {
 
     let ambient_light = static_init!(
         capsules::ambient_light::AmbientLight<'static>,
-        capsules::ambient_light::AmbientLight::new(isl29035, kernel::Container::create()));
+        capsules::ambient_light::AmbientLight::new(isl29035, kernel::Grant::create()));
     hil::sensors::AmbientLight::set_client(isl29035, ambient_light);
 
     // Set up an SPI MUX, so there can be multiple clients
@@ -298,12 +298,12 @@ pub unsafe fn reset_handler() {
     let temp = static_init!(
         capsules::temperature::TemperatureSensor<'static>,
         capsules::temperature::TemperatureSensor::new(si7021,
-                                                 kernel::Container::create()), 96/8);
+                                                 kernel::Grant::create()), 96/8);
     kernel::hil::sensors::TemperatureDriver::set_client(si7021, temp);
     let humidity = static_init!(
         capsules::humidity::HumiditySensor<'static>,
         capsules::humidity::HumiditySensor::new(si7021,
-                                                 kernel::Container::create()), 96/8);
+                                                 kernel::Grant::create()), 96/8);
     kernel::hil::sensors::HumidityDriver::set_client(si7021, humidity);
 
 
@@ -332,7 +332,7 @@ pub unsafe fn reset_handler() {
     sam4l::gpio::PC[13].set_client(fxos8700);
     let ninedof = static_init!(
         capsules::ninedof::NineDof<'static>,
-        capsules::ninedof::NineDof::new(fxos8700, kernel::Container::create()));
+        capsules::ninedof::NineDof::new(fxos8700, kernel::Grant::create()));
     hil::sensors::NineDof::set_client(fxos8700, ninedof);
 
     // Clear sensors enable pin to enable sensor rail
@@ -390,36 +390,51 @@ pub unsafe fn reset_handler() {
     // # BUTTONs
 
     let button_pins = static_init!(
-        [&'static sam4l::gpio::GPIOPin; 1],
-        [&sam4l::gpio::PC[24]]);
+        [(&'static sam4l::gpio::GPIOPin, capsules::button::GpioMode); 1],
+        [(&sam4l::gpio::PC[24], capsules::button::GpioMode::LowWhenPressed)]);
 
     let button = static_init!(
         capsules::button::Button<'static, sam4l::gpio::GPIOPin>,
-        capsules::button::Button::new(button_pins, kernel::Container::create()));
-    for btn in button_pins.iter() {
+        capsules::button::Button::new(button_pins, kernel::Grant::create()));
+    for &(btn, _) in button_pins.iter() {
         btn.set_client(button);
     }
 
     let crc = static_init!(
         capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
-        capsules::crc::Crc::new(&mut sam4l::crccu::CRCCU, kernel::Container::create()));
+        capsules::crc::Crc::new(&mut sam4l::crccu::CRCCU, kernel::Grant::create()));
 
     rf233_spi.set_client(rf233);
     rf233.initialize(&mut RF233_BUF, &mut RF233_REG_WRITE, &mut RF233_REG_READ);
 
+    let rf233_mac = static_init!(
+        capsules::ieee802154::mac::MacDevice<'static, RF233Device>,
+        capsules::ieee802154::mac::MacDevice::new(rf233));
+    rf233.set_transmit_client(rf233_mac);
+    rf233.set_receive_client(rf233_mac, &mut RF233_RX_BUF);
+    rf233.set_config_client(rf233_mac);
+
+    let mux_mac = static_init!(
+        capsules::ieee802154::virtual_mac::MuxMac<'static>,
+        capsules::ieee802154::virtual_mac::MuxMac::new(rf233_mac));
+    rf233_mac.set_transmit_client(mux_mac);
+    rf233_mac.set_receive_client(mux_mac);
+
     let radio_mac = static_init!(
-        capsules::mac::MacDevice<'static, RF233Device>,
-        capsules::mac::MacDevice::new(rf233));
-    let radio_capsule = static_init!(
-        capsules::radio::RadioDriver<'static,
-                                     capsules::mac::MacDevice<'static, RF233Device>>,
-        capsules::radio::RadioDriver::new(radio_mac));
-    radio_capsule.config_buffer(&mut RADIO_BUF);
-    radio_mac.set_transmit_client(radio_capsule);
-    radio_mac.set_receive_client(radio_capsule);
-    rf233.set_transmit_client(radio_mac);
-    rf233.set_receive_client(radio_mac, &mut RF233_RX_BUF);
-    rf233.set_config_client(radio_mac);
+        capsules::ieee802154::virtual_mac::MacUser<'static>,
+        capsules::ieee802154::virtual_mac::MacUser::new(mux_mac));
+    mux_mac.add_user(radio_mac);
+
+    let radio_driver = static_init!(
+        capsules::ieee802154::RadioDriver<'static>,
+        capsules::ieee802154::RadioDriver::new(radio_mac,
+                                               kernel::Grant::create(),
+                                               &mut RADIO_BUF));
+
+    rf233_mac.set_key_procedure(radio_driver);
+    rf233_mac.set_device_procedure(radio_driver);
+    radio_mac.set_transmit_client(radio_driver);
+    radio_mac.set_receive_client(radio_driver);
     radio_mac.set_pan(0xABCD);
     radio_mac.set_address(0x1008);
 
@@ -434,11 +449,11 @@ pub unsafe fn reset_handler() {
         capsules::usb_user::UsbSyscallDriver<'static,
             capsules::usbc_client::Client<'static, sam4l::usbc::Usbc<'static>>>,
         capsules::usb_user::UsbSyscallDriver::new(
-            usb_client, kernel::Container::create()));
+            usb_client, kernel::Grant::create()));
 
     let imix = Imix {
         console: console,
-        timer: timer,
+        alarm: alarm,
         gpio: gpio,
         temp: temp,
         humidity: humidity,
@@ -450,7 +465,7 @@ pub unsafe fn reset_handler() {
         spi: spi_syscalls,
         ipc: kernel::ipc::IPC::new(),
         ninedof: ninedof,
-        radio: radio_capsule,
+        radio_driver: radio_driver,
         usb_driver: usb_driver,
     };
 

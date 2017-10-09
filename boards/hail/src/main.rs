@@ -5,10 +5,9 @@
 
 #![no_std]
 #![no_main]
-#![feature(asm,const_fn,drop_types_in_const,lang_items,compiler_builtins_lib)]
+#![feature(asm,const_fn,lang_items,compiler_builtins_lib)]
 
 extern crate capsules;
-extern crate cortexm4;
 extern crate compiler_builtins;
 #[allow(unused_imports)]
 #[macro_use(debug,static_init)]
@@ -52,7 +51,7 @@ static mut PROCESSES: [Option<kernel::Process<'static>>; NUM_PROCS] = [None, Non
 struct Hail {
     console: &'static capsules::console::Console<'static, sam4l::usart::USART>,
     gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
-    timer: &'static capsules::timer::TimerDriver<'static,
+    alarm: &'static capsules::alarm::AlarmDriver<'static,
                                                  VirtualMuxAlarm<'static,
                                                                  sam4l::ast::Ast<'static>>>,
     ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
@@ -80,27 +79,28 @@ impl Platform for Hail {
     {
 
         match driver_num {
-            0 => f(Some(self.console)),
-            1 => f(Some(self.gpio)),
+            capsules::console::DRIVER_NUM => f(Some(self.console)),
+            capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
 
-            3 => f(Some(self.timer)),
-            4 => f(Some(self.spi)),
-            5 => f(Some(self.nrf51822)),
-            6 => f(Some(self.ambient_light)),
-            7 => f(Some(self.adc)),
-            8 => f(Some(self.led)),
-            9 => f(Some(self.button)),
-            10 => f(Some(self.temp)),
-            11 => f(Some(self.ninedof)),
+            capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules::spi::DRIVER_NUM => f(Some(self.spi)),
+            capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
+            capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
+            capsules::adc::DRIVER_NUM => f(Some(self.adc)),
+            capsules::led::DRIVER_NUM => f(Some(self.led)),
+            capsules::button::DRIVER_NUM => f(Some(self.button)),
+            capsules::humidity::DRIVER_NUM => f(Some(self.humidity)),
+            capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
+            capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
 
-            14 => f(Some(self.rng)),
+            capsules::rng::DRIVER_NUM => f(Some(self.rng)),
 
-            16 => f(Some(self.crc)),
-            17 => f(Some(self.aes)),
+            capsules::crc::DRIVER_NUM => f(Some(self.crc)),
+            capsules::symmetric_encryption::DRIVER_NUM => f(Some(self.aes)),
 
-            26 => f(Some(self.dac)),
-            35 => f(Some(self.humidity)),
-            0xff => f(Some(&self.ipc)),
+            capsules::dac::DRIVER_NUM => f(Some(self.dac)),
+
+            kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             _ => f(None),
         }
     }
@@ -188,7 +188,7 @@ pub unsafe fn reset_handler() {
         capsules::console::Console::new(&sam4l::usart::USART0,
                      115200,
                      &mut capsules::console::WRITE_BUF,
-                     kernel::Container::create()));
+                     kernel::Grant::create()));
     hil::uart::UART::set_client(&sam4l::usart::USART0, console);
 
     // Create the Nrf51822Serialization driver for passing BLE commands
@@ -228,13 +228,13 @@ pub unsafe fn reset_handler() {
     let temp = static_init!(
         capsules::temperature::TemperatureSensor<'static>,
         capsules::temperature::TemperatureSensor::new(si7021,
-                                                 kernel::Container::create()), 96/8);
+                                                 kernel::Grant::create()), 96/8);
     kernel::hil::sensors::TemperatureDriver::set_client(si7021, temp);
 
     let humidity = static_init!(
         capsules::humidity::HumiditySensor<'static>,
         capsules::humidity::HumiditySensor::new(si7021,
-                                                 kernel::Container::create()), 96/8);
+                                                 kernel::Grant::create()), 96/8);
     kernel::hil::sensors::HumidityDriver::set_client(si7021, humidity);
 
 
@@ -253,17 +253,17 @@ pub unsafe fn reset_handler() {
 
     let ambient_light = static_init!(
         capsules::ambient_light::AmbientLight<'static>,
-        capsules::ambient_light::AmbientLight::new(isl29035, kernel::Container::create()));
+        capsules::ambient_light::AmbientLight::new(isl29035, kernel::Grant::create()));
     hil::sensors::AmbientLight::set_client(isl29035, ambient_light);
 
-    // Timer
+    // Alarm
     let virtual_alarm1 = static_init!(
         VirtualMuxAlarm<'static, sam4l::ast::Ast>,
         VirtualMuxAlarm::new(mux_alarm));
-    let timer = static_init!(
-        capsules::timer::TimerDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast>>,
-        capsules::timer::TimerDriver::new(virtual_alarm1, kernel::Container::create()));
-    virtual_alarm1.set_client(timer);
+    let alarm = static_init!(
+        capsules::alarm::AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast>>,
+        capsules::alarm::AlarmDriver::new(virtual_alarm1, kernel::Grant::create()));
+    virtual_alarm1.set_client(alarm);
 
     // FXOS8700CQ accelerometer, device address 0x1e
     let fxos8700_i2c = static_init!(I2CDevice, I2CDevice::new(sensors_i2c, 0x1e));
@@ -277,7 +277,7 @@ pub unsafe fn reset_handler() {
 
     let ninedof = static_init!(
         capsules::ninedof::NineDof<'static>,
-        capsules::ninedof::NineDof::new(fxos8700, kernel::Container::create()));
+        capsules::ninedof::NineDof::new(fxos8700, kernel::Grant::create()));
     hil::sensors::NineDof::set_client(fxos8700, ninedof);
 
     // Initialize and enable SPI HAL
@@ -296,7 +296,7 @@ pub unsafe fn reset_handler() {
         VirtualSpiMasterDevice<'static, sam4l::spi::Spi>,
         VirtualSpiMasterDevice::new(mux_spi, 0));
 
-    // Create the SPI systemc call capsule, passing the client
+    // Create the SPI system call capsule, passing the client
     let spi_syscalls = static_init!(
         capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi>>,
         capsules::spi::Spi::new(syscall_spi_device));
@@ -316,12 +316,12 @@ pub unsafe fn reset_handler() {
 
     // BUTTONs
     let button_pins = static_init!(
-        [&'static sam4l::gpio::GPIOPin; 1],
-        [&sam4l::gpio::PA[16]]);
+        [(&'static sam4l::gpio::GPIOPin, capsules::button::GpioMode); 1],
+        [(&sam4l::gpio::PA[16], capsules::button::GpioMode::LowWhenPressed)]);
     let button = static_init!(
         capsules::button::Button<'static, sam4l::gpio::GPIOPin>,
-        capsules::button::Button::new(button_pins, kernel::Container::create()));
-    for btn in button_pins.iter() {
+        capsules::button::Button::new(button_pins, kernel::Grant::create()));
+    for &(btn, _) in button_pins.iter() {
         btn.set_client(button);
     }
 
@@ -346,7 +346,7 @@ pub unsafe fn reset_handler() {
     // Setup RNG
     let rng = static_init!(
             capsules::rng::SimpleRng<'static, sam4l::trng::Trng>,
-            capsules::rng::SimpleRng::new(&sam4l::trng::TRNG, kernel::Container::create()));
+            capsules::rng::SimpleRng::new(&sam4l::trng::TRNG, kernel::Grant::create()));
     sam4l::trng::TRNG.set_client(rng);
 
 
@@ -367,7 +367,7 @@ pub unsafe fn reset_handler() {
     // CRC
     let crc = static_init!(
         capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
-        capsules::crc::Crc::new(&mut sam4l::crccu::CRCCU, kernel::Container::create()));
+        capsules::crc::Crc::new(&mut sam4l::crccu::CRCCU, kernel::Grant::create()));
     sam4l::crccu::CRCCU.set_client(crc);
 
     // DAC
@@ -379,7 +379,7 @@ pub unsafe fn reset_handler() {
     let aes = static_init!(
         capsules::symmetric_encryption::Crypto<'static, sam4l::aes::Aes>,
         capsules::symmetric_encryption::Crypto::new(&mut sam4l::aes::AES,
-                                                    kernel::Container::create(),
+                                                    kernel::Grant::create(),
                                                     &mut capsules::symmetric_encryption::KEY,
                                                     &mut capsules::symmetric_encryption::BUF,
                                                     &mut capsules::symmetric_encryption::IV));
@@ -388,7 +388,7 @@ pub unsafe fn reset_handler() {
     let hail = Hail {
         console: console,
         gpio: gpio,
-        timer: timer,
+        alarm: alarm,
         ambient_light: ambient_light,
         temp: temp,
         humidity: humidity,

@@ -1,10 +1,11 @@
-#![feature(const_fn)]
+#![feature(const_fn,const_cell_new)]
 #![no_std]
 
 #[allow(unused_imports)]
 #[macro_use(debug)]
 extern crate kernel;
 
+pub mod alarm;
 pub mod ambient_light;
 pub mod button;
 pub mod console;
@@ -13,7 +14,6 @@ pub mod gpio;
 pub mod isl29035;
 pub mod led;
 pub mod nrf51822_serialization;
-pub mod timer;
 pub mod tmp006;
 pub mod sdcard;
 pub mod si7021;
@@ -32,7 +32,6 @@ pub mod fxos8700cq;
 pub mod crc;
 pub mod rf233;
 pub mod rf233_const;
-pub mod radio;
 pub mod rng;
 pub mod symmetric_encryption;
 pub mod ninedof;
@@ -49,7 +48,7 @@ pub mod usb_user;
 pub mod usbc_client;
 #[macro_use]
 pub mod net;
-pub mod mac;
+pub mod ieee802154;
 pub mod temperature;
 pub mod humidity;
 //pub mod nrf_internal_temp_sensor;

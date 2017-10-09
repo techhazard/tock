@@ -7,15 +7,15 @@ developing Tock.
 ## Requirements
 
 1. [Rust](http://www.rust-lang.org/) (install `rustup` so Tock will choose the right version automatically)
-1. [Xargo](http://www.rust-lang.org/) (Rust `cargo` wrapper that installs core library for embedded targets)
-2. [arm-none-eabi toolchain](https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads) (version >= 5.2)
-3. Command line utilities: wget, sed, make, cmake
+2. [Xargo](http://www.rust-lang.org/) (Rust `cargo` wrapper that installs core library for embedded targets)
+3. [arm-none-eabi toolchain](https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads) (version >= 5.2)
+4. Command line utilities: wget, sed, make, cmake
 
 ### Installing Requirements
 
 #### Rust (nightly)
 
-We are using `rustc 1.19.0-nightly (04145943a 2017-06-19)`. We recommend
+We are using `rustc 1.22.0-nightly (325ba23d5 2017-09-19)`. We recommend
 installing it with [rustup](http://www.rustup.rs) so you can manage multiple
 versions of Rust and continue using stable versions for other Rust code:
 
@@ -30,7 +30,7 @@ to your `$PATH`.
 Then install the correct nightly version of Rust:
 
 ```bash
-$ rustup install nightly-2017-06-20
+$ rustup install nightly-2017-09-20
 ```
 
 #### Xargo
@@ -97,8 +97,8 @@ Check that you have a 64-bit version of libc installed.
 
 ```bash
 $ sudo add-apt-repository ppa:team-gcc-arm-embedded/ppa
-$ sudo apt-get update
-$ sudo apt-get install gcc-arm-embedded
+$ sudo apt update
+$ sudo apt install gcc-arm-embedded
 ```
 
 ###### Arch
@@ -171,13 +171,6 @@ This will build the app and generate a binary in Tock Binary Format
 (using the `elf2tbf` utility):
 `userland/examples/blink/build/cortex-m4/cortex-m4.bin`.
 
-Alternatively, apps can be built and automatically uploaded from the
-Tock root directory:
-
-```bash
-$ make examples/blink
-```
-
 ## Loading the kernel and applications onto a board
 
 ### Optional Requirements
@@ -233,7 +226,8 @@ the board specific READMEs:
 
 * [imix](../boards/imix/README.md)
 * [Hail](../boards/hail/README.md)
-* [nRF](../boards/nrf51dk/README.md)
+* [nRF51-DK](../boards/nrf51dk/README.md)
+* [nRF52-DK](../boards/nrf52dk/README.md)
 
 
 ## Formatting Rust Source Code

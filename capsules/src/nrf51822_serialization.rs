@@ -22,6 +22,9 @@ use kernel::{AppId, Callback, AppSlice, Driver, ReturnCode, Shared};
 use kernel::common::take_cell::{MapCell, TakeCell};
 use kernel::hil::uart::{self, UARTAdvanced, Client};
 
+/// Syscall number
+pub const DRIVER_NUM: usize = 0x80004;
+
 struct App {
     callback: Option<Callback>,
     tx_buffer: Option<AppSlice<Shared, u8>>,
@@ -44,7 +47,7 @@ impl Default for App {
 
 // Local buffer for passing data between applications and the underlying
 // transport hardware.
-pub static mut WRITE_BUF: [u8; 256] = [0; 256];
+pub static mut WRITE_BUF: [u8; 600] = [0; 600];
 pub static mut READ_BUF: [u8; 600] = [0; 600];
 
 // We need two resources: a UART HW driver and driver state for each
@@ -138,7 +141,7 @@ impl<'a, U: UARTAdvanced> Driver for Nrf51822Serialization<'a, U> {
     ///
     /// - `0`: Driver check.
     /// - `1`: Send the allowed buffer to the nRF.
-    fn command(&self, command_type: usize, _: usize, _: AppId) -> ReturnCode {
+    fn command(&self, command_type: usize, _: usize, _: usize, _: AppId) -> ReturnCode {
         match command_type {
             0 /* check if present */ => ReturnCode::SUCCESS,
 
@@ -174,7 +177,7 @@ impl<'a, U: UARTAdvanced> Client for Nrf51822Serialization<'a, U> {
         //               Can't just use 0!
         self.app.map(|appst| {
             // Call the callback after TX has finished
-            appst.callback.as_mut().map(|mut cb| { cb.schedule(1, 0, 0); });
+            appst.callback.as_mut().map(|cb| { cb.schedule(1, 0, 0); });
         });
     }
 

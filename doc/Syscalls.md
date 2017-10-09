@@ -11,12 +11,23 @@ tutorial on how to use them in drivers or applications.
 
 - [Overview of System Calls in Tock](#overview-of-system-calls-in-tock)
 - [Process State](#process-state)
+- [Startup](#startup)
 - [The System Calls](#the-system-calls)
   * [0: Yield](#0-yield)
+    + [Arguments](#arguments)
+    + [Return](#return)
   * [1: Subscribe](#1-subscribe)
+    + [Arguments](#arguments-1)
+    + [Return](#return-1)
   * [2: Command](#2-command)
+    + [Arguments](#arguments-2)
+    + [Return](#return-2)
   * [3: Allow](#3-allow)
+    + [Arguments](#arguments-3)
+    + [Return](#return-3)
   * [4: Memop](#4-memop)
+    + [Arguments](#arguments-4)
+    + [Return](#return-4)
 - [The Context Switch](#the-context-switch)
 - [How System Calls Connect to Drivers](#how-system-calls-connect-to-drivers)
 - [Allocated Driver Numbers](#allocated-driver-numbers)
@@ -68,6 +79,18 @@ In Tock, a process can be in one of three states:
  Tock. Processes enter the Fault state by performing an illegal operation, such
  as accessing memory outside of their address space.
 
+## Startup
+
+Upon process initialization, a single function call task is added to it's
+callback queue. The function is determined by the ENTRY point in the process
+TBF header (typically the `_start` symbol) and is passed the following
+arguments in registers `r0` - `r3`:
+
+  * r0: the base address of the process code
+  * r1: the base address of the processes allocated memory region
+  * r2: the total amount of memory in its region
+  * r3: the current process memory break
+
 ## The System Calls
 
 All system calls except Yield (which cannot fail) return an integer return code
@@ -108,35 +131,67 @@ process.
 If a process has enqueued callbacks waiting to execute when Yield is called, the
 process immediately re-enters the Running state and the first callback runs.
 
-The Yield syscall takes no arguments.
+```rust
+yield()
+```
+
+#### Arguments
+
+None.
+
+#### Return
+
+None.
+
 
 ### 1: Subscribe
 
 Subscribe assigns callback functions to be executed in response to various
 events.
 
-The Subscribe syscall takes two arguments:
+```rust
+subscribe(driver: u32, subscribe_number: u32, callback: u32, userdata: u32) -> ReturnCode as u32
+```
 
+#### Arguments
+
+ - `driver`: An integer specifying which driver to call.
  - `subscribe_number`: An integer index for which function is being subscribed.
  - `callback`: A pointer to a callback function to be executed when this event
  occurs. All callbacks conform to the C-style function signature:
  `void callback(int arg1, int arg2, int arg3, void* data)`.
+ - `userdata`: A pointer to a value of any type that will be passed back by the
+   kernel as the last argument to `callback`.
 
 Individual drivers define a mapping for `subscribe_number` to the events that
 may generate that callback as well as the meaning for each of the `callback`
 arguments.
 
+#### Return
+
+ - `EINVAL` if the callback pointer is NULL.
+ - `ENODEVICE` if `driver` does not refer to a valid kernel driver.
+ - `ENOSUPPORT` if the driver exists but doesn't support the `subscribe_number`.
+ - Other return codes based on the specific driver.
+
+
 ### 2: Command
 
 Command instructs the driver to perform a specific action.
 
-The Command syscall takes two arguments:
+```rust
+command(driver: u32, command_number: u32, argument1: u32, argument2: u32) -> ReturnCode as u32
+```
 
+#### Arguments
+
+ - `driver`: An integer specifying which driver to call.
  - `command_number`: An integer specifying the requested command.
- - `argument`: A command-specific argument.
+ - `argument1`: A command-specific argument.
+ - `argument2`: A command-specific argument.
 
 The `command_number` tells the driver which command was called from
-userspace, and the `argument` is specific to the driver and command number.
+userspace, and the `argument`s are specific to the driver and command number.
 One example of the argument being used is in the `led` driver, where the
 command to turn on an LED uses the argument to specify which LED.
 
@@ -149,11 +204,22 @@ driver is present. In other cases, however, the return value can have an
 additional meaning such as the number of devices present, as is the case in the
 `led` driver to indicate how many LEDs are present on the board.
 
+#### Return
+
+ - `ENODEVICE` if `driver` does not refer to a valid kernel driver.
+ - `ENOSUPPORT` if the driver exists but doesn't support the `command_number`.
+ - Other return codes based on the specific driver.
+
+
 ### 3: Allow
 
 Allow marks a region of memory as shared between the kernel and application.
 
-The Allow syscall takes four arguments:
+```rust
+allow(driver: u32, allow_number: u32, pointer: usize, size: u32) -> ReturnCode as u32
+```
+
+#### Arguments
 
  - `driver`: An integer specifying which driver should be granted access.
  - `allow_number`: A driver-specific integer specifying the purpose of this
@@ -169,22 +235,39 @@ each application. If one application needs multiple users of a driver (i.e. two
 libraries on top of I2C), each library will need to re-Allow its buffers before
 beginning operations.
 
+#### Return
+
+ - `ENODEVICE` if `driver` does not refer to a valid kernel driver.
+ - `ENOSUPPORT` if the driver exists but doesn't support the `allow_number`.
+ - `EINVAL` the buffer referred to by `pointer` and `size` lies completely or
+partially outside of the processes addressable RAM.
+ - Other return codes based on the specific driver.
+
+
 ### 4: Memop
 
 Memop expands the memory segment available to the process, allows the process to
-retrieve pointers to its allocated memory space, and provides a mechanism for
-the process to tell the kernel where its stack and heap start.
+retrieve pointers to its allocated memory space, provides a mechanism for
+the process to tell the kernel where its stack and heap start, and other
+operations involving process memory.
 
-The Memop syscall takes two arguments:
+```rust
+memop(op_type: u32, argument: u32) -> [[ VARIES ]] as u32
+```
+
+#### Arguments
 
  - `op_type`: An integer indicating whether this is a `brk` (0), a `sbrk` (1),
    or another memop call.
  - `argument`: The argument to `brk`, `sbrk`, or other call.
 
-Both `brk` and `sbrk` adjust the current memory segment. The `argument` to `brk`
-is a pointer indicating the new requested end of memory segment. The `argument`
-to `sbrk` is an integer, indicating the number of bytes to adjust the end of the
-memory segment by.
+Each memop operation is specific and details of each call can be found in
+the [memop syscall documentation](syscalls/memop.md).
+
+#### Return
+
+- Dependent on the particular memop call.
+
 
 ## The Context Switch
 
@@ -265,38 +348,4 @@ will get routed to the console, and all other driver numbers will return
 
 ## Allocated Driver Numbers
 
-| Driver Number | Driver           | Description                                |
-|---------------|------------------|--------------------------------------------|
-| 0             | Console          | UART console                               |
-| 1             | GPIO             |                                            |
-| 2             | TMP006           | Temperature sensor                         |
-| 3             | Timer            |                                            |
-| 4             | SPI              | Raw SPI interface                          |
-| 5             | nRF51822         | nRF serialization link to nRF51822 BLE SoC |
-| 6             | ISL29035         | Light sensor                               |
-| 7             | ADC              |                                            |
-| 8             | LED              |                                            |
-| 9             | Button           |                                            |
-| 10            | SI7021           | Temperature sensor                         |
-| 11            | Ninedof          | Virtualized accelerometer/magnetometer/gyroscope |
-| 12            | TSL2561          | Light sensor                               |
-| 13            | I2C Master/Slave | Raw I2C interface                          |
-| 14            | RNG              | Random number generator                    |
-| 15            | SDCard           | Raw block access to an SD card             |
-| 16            | CRC              | Cyclic Redundancy Check computation        |
-| 17            | AES              | AES encryption and decryption              |
-| 18            | LTC294X          | Battery gauge IC                           |
-| 19            | PCA9544A         | I2C address multiplexing                   |
-| 20            | GPIO Async       | Asynchronous GPIO pins                     |
-| 21            | MAX17205         | Battery gauge IC                           |
-| 22            | LPS25HB          | Pressure sensor                            |
-| 25            | SPI Slave        | Raw SPI slave interface                    |
-| 26            | DAC              | Digital to analog converter                |
-| 27            | Nonvolatile Storage | Generic interface for persistent storage |
-| 30            | App Flash        | Allow apps to write their own flash        |
-| 33            | BLE              | Bluetooth low energy communication         |
-| 34            | USB              | Universal Serial Bus interface             |
-| 35            | Humidity Sensor  | Humdity Sensor                             |
-| 154           | Radio            | 15.4 radio interface                       |
-| 255           | IPC              | Inter-process communication                |
-
+All documented drivers are in the [doc/syscalls](syscalls/README.md) folder.
