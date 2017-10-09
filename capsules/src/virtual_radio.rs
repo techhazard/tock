@@ -10,7 +10,7 @@ use core::cell::Cell;
 use kernel::ReturnCode;
 use kernel::common::virtualizer::{QueuedCall, CallQueue, Dequeued};
 use kernel::hil::radio;
-use mac;
+use ieee802154::mac;
 use net::ieee802154::*;
 
 pub struct RadioMux<'a, R: radio::Radio + 'a> {
@@ -94,7 +94,7 @@ impl<'a, R: radio::Radio> Dequeued<'a> for VirtualRadioDevice<'a, R> {
     }
 }
 
-impl<'a, R: radio::Radio> mac::Mac for VirtualRadioDevice<'a, R> {
+impl<'a, R: radio::Radio> mac::Mac<'a> for VirtualRadioDevice<'a, R> {
     fn get_address(&self) -> u16 {
         self.mux.mac.get_address()
     }
@@ -126,7 +126,7 @@ impl<'a, R: radio::Radio> mac::Mac for VirtualRadioDevice<'a, R> {
         self.mux.mac.set_tx_power(power)
     }
 
-    fn config_commit(&self) -> ReturnCode {
+    fn config_commit(&self) {
         self.mux.mac.config_commit()
     }
     fn is_on(&self) -> bool {
@@ -148,6 +148,13 @@ impl<'a, R: radio::Radio> mac::Mac for VirtualRadioDevice<'a, R> {
     /// that it can be re-used.
     fn transmit(&self, frame: mac::Frame) -> (ReturnCode, Option<&'static mut [u8]>) {
         return (ReturnCode::ENOSUPPORT, Some(frame.into_buf()));
+    }
+    fn set_transmit_client(&self, client: &'a mac::TxClient) {
+        self.mux.mac.set_transmit_client(client);        
+    }
+
+    fn set_receive_client(&self, client: &'a mac::RxClient) {
+        self.mux.mac.set_receive_client(client);        
     }
 }
 

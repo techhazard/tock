@@ -77,7 +77,7 @@ enum UsartClient<'a> {
     SpiMaster(&'a hil::spi::SpiMasterClient),
 }
 
-pub struct USART {
+pub struct USART<'a> {
     registers: *mut USARTRegisters,
     clock: pm::Clock,
     nvic: nvic::NvicIdx,
@@ -94,7 +94,7 @@ pub struct USART {
     tx_dma_peripheral: dma::DMAPeripheral,
     tx_len: Cell<usize>,
 
-    client: Cell<Option<UsartClient<'static>>>,
+    client: Cell<Option<UsartClient<'a>>>,
 
     spi_chip_select: Cell<Option<&'static hil::gpio::Pin>>,
 }
@@ -121,13 +121,13 @@ pub static mut USART3: USART = USART::new(USART_BASE_ADDRS[3],
                                           dma::DMAPeripheral::USART3_RX,
                                           dma::DMAPeripheral::USART3_TX);
 
-impl USART {
+impl<'a> USART<'a> {
     const fn new(base_addr: *mut USARTRegisters,
                  clock: pm::PBAClock,
                  nvic: nvic::NvicIdx,
                  rx_dma_peripheral: dma::DMAPeripheral,
                  tx_dma_peripheral: dma::DMAPeripheral)
-                 -> USART {
+                 -> USART<'a> {
         USART {
             registers: base_addr,
             clock: pm::Clock::PBA(clock),
@@ -468,7 +468,7 @@ impl USART {
     }
 }
 
-impl dma::DMAClient for USART {
+impl<'a> dma::DMAClient for USART<'a> {
     fn xfer_done(&self, pid: dma::DMAPeripheral) {
         match self.usart_mode.get() {
             UsartMode::Uart => {
@@ -586,8 +586,8 @@ impl dma::DMAClient for USART {
 }
 
 /// Implementation of kernel::hil::UART
-impl hil::uart::UART for USART {
-    fn set_client(&self, client: &'static hil::uart::Client) {
+impl<'a> hil::uart::UART<'a> for USART<'a> {
+    fn set_client(&self, client: &'a hil::uart::Client) {
         let c = UsartClient::Uart(client);
         self.client.set(Some(c));
     }
@@ -637,7 +637,7 @@ impl hil::uart::UART for USART {
         self.disable_clock();
     }
 
-    fn transmit(&self, tx_data: &'static mut [u8], tx_len: usize) {
+    fn transmit(&'a self, tx_data: &'static mut [u8], tx_len: usize) {
         // enable USART clock
         //  must do this before writing any registers
         self.enable_clock();
@@ -657,7 +657,7 @@ impl hil::uart::UART for USART {
         });
     }
 
-    fn receive(&self, rx_buffer: &'static mut [u8], rx_len: usize) {
+    fn receive(&'a self, rx_buffer: &'static mut [u8], rx_len: usize) {
         // enable USART clock
         //  must do this before writing any registers
         self.enable_clock();
@@ -685,7 +685,7 @@ impl hil::uart::UART for USART {
     }
 }
 
-impl hil::uart::UARTAdvanced for USART {
+impl<'a> hil::uart::UARTAdvanced<'a> for USART<'a> {
     fn receive_automatic(&self, rx_buffer: &'static mut [u8], interbyte_timeout: u8) {
         // enable USART clock
         //  must do this before writing any registers
@@ -739,7 +739,7 @@ impl hil::uart::UARTAdvanced for USART {
 
 
 /// SPI
-impl hil::spi::SpiMaster for USART {
+impl<'a> hil::spi::SpiMaster for USART<'a> {
     type ChipSelect = Option<&'static hil::gpio::Pin>;
 
     fn init(&self) {

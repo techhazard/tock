@@ -51,7 +51,7 @@ type RF233Device = capsules::rf233::RF233<'static,
                                           VirtualSpiMasterDevice<'static, sam4l::spi::Spi>>;
 
 struct Imix {
-    console: &'static capsules::console::Console<'static, sam4l::usart::USART>,
+    console: &'static capsules::console::Console<'static, sam4l::usart::USART<'static>>,
     gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
     alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
     temp: &'static capsules::temperature::TemperatureSensor<'static>,
