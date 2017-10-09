@@ -6,9 +6,9 @@
 
 use core::cell::Cell;
 use kernel::ReturnCode;
+use kernel::common::take_cell::TakeCell;
 use kernel::common::virtualizer::{QueuedCall, CallQueue, Dequeued};
 use kernel::hil::uart;
-use kernel::common::take_cell::TakeCell;
 
 pub struct UartMux<'a> {
     uart: &'a uart::UART<'a>,
@@ -57,7 +57,7 @@ impl<'a> UartMux<'a> {
 impl<'a> VirtualUartDevice<'a> {
     pub fn new(mux: &'a UartMux<'a>) -> VirtualUartDevice<'a> {
         VirtualUartDevice {
-            tx_buffer: TakeCell::empty(), 
+            tx_buffer: TakeCell::empty(),
             queued_call: QueuedCall::new(&mux.queue),
             mux: mux,
             client: Cell::new(None),
@@ -77,7 +77,10 @@ impl<'a> uart::Client for VirtualUartDevice<'a> {
         self.mux.clear_busy();
         self.mux.next();
     }
-    fn receive_complete(&self, _rx_buffer: &'static mut [u8], _rx_len: usize, _error: uart::Error) {
+    fn receive_complete(&self,
+                        _rx_buffer: &'static mut [u8],
+                        _rx_len: usize,
+                        _error: uart::Error) {
         // do nothing, this should not be called
     }
 }
@@ -88,9 +91,7 @@ impl<'a> Dequeued<'a> for VirtualUartDevice<'a> {
     }
     fn dequeued(&'a self) {
         self.mux.set_client(self);
-        self.tx_buffer.take().map(|buf| {
-            self.mux.uart.transmit(buf, self.tx_len.get());
-        });
+        self.tx_buffer.take().map(|buf| { self.mux.uart.transmit(buf, self.tx_len.get()); });
     }
 }
 
@@ -104,7 +105,7 @@ impl<'a> uart::UART<'a> for VirtualUartDevice<'a> {
     /// Initialize UART
     /// Panics if UARTParams are invalid for the current chip.
     fn init(&self, _params: uart::UARTParams) {
-       // Do nothing, shouldn't have a control path here
+        // Do nothing, shouldn't have a control path here
     }
 
     /// Transmit data.
@@ -120,5 +121,4 @@ impl<'a> uart::UART<'a> for VirtualUartDevice<'a> {
     fn receive(&self, _rx_buffer: &'static mut [u8], _rx_len: usize) {
         // Should not be part of this trait.
     }
-
 }

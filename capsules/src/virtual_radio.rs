@@ -7,10 +7,10 @@
 //
 
 use core::cell::Cell;
+use ieee802154::mac;
 use kernel::ReturnCode;
 use kernel::common::virtualizer::{QueuedCall, CallQueue, Dequeued};
 use kernel::hil::radio;
-use ieee802154::mac;
 use net::ieee802154::*;
 
 pub struct RadioMux<'a, R: radio::Radio + 'a> {
@@ -150,11 +150,11 @@ impl<'a, R: radio::Radio> mac::Mac<'a> for VirtualRadioDevice<'a, R> {
         return (ReturnCode::ENOSUPPORT, Some(frame.into_buf()));
     }
     fn set_transmit_client(&self, client: &'a mac::TxClient) {
-        self.mux.mac.set_transmit_client(client);        
+        self.mux.mac.set_transmit_client(client);
     }
 
     fn set_receive_client(&self, client: &'a mac::RxClient) {
-        self.mux.mac.set_receive_client(client);        
+        self.mux.mac.set_receive_client(client);
     }
 }
 
