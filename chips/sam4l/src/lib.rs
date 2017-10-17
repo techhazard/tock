@@ -11,6 +11,7 @@
 extern crate cortexm4;
 #[allow(unused_imports)]
 #[macro_use(debug)]
+#[macro_use(bitfields, bitmasks)]
 extern crate kernel;
 
 #[macro_use]
@@ -36,6 +37,8 @@ pub mod crccu;
 pub mod dac;
 pub mod aes;
 pub mod usbc;
+
+pub mod regs;
 
 unsafe extern "C" fn unhandled_interrupt() {
     let mut interrupt_number: u32;
