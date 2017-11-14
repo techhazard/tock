@@ -23,7 +23,8 @@ macro_rules! bitmasks {
     } => {
         #[allow(non_upper_case_globals)]
         #[allow(unused)]
-        pub const $field: Field<$valtype, $reg_desc> = Field::<$valtype, $reg_desc>::new($mask, $shift);
+        pub const $field: Field<$valtype, $reg_desc> =
+            Field::<$valtype, $reg_desc>::new($mask, $shift);
 
         #[allow(non_snake_case)]
         #[allow(unused)]
@@ -35,7 +36,8 @@ macro_rules! bitmasks {
             $(
             #[allow(non_upper_case_globals)]
             #[allow(unused)]
-            pub const $valname: FieldValue<$valtype, $reg_desc> = FieldValue::<$valtype, $reg_desc>::new($mask, $shift, $value);
+            pub const $valname: FieldValue<$valtype, $reg_desc> =
+                FieldValue::<$valtype, $reg_desc>::new($mask, $shift, $value);
             )*
 
             #[allow(dead_code)]
@@ -54,7 +56,8 @@ macro_rules! bitmasks {
     } => {
         #[allow(non_upper_case_globals)]
         #[allow(unused)]
-        pub const $field: Field<$valtype, $reg_desc> = Field::<$valtype, $reg_desc>::new(1, $bit);
+        pub const $field: Field<$valtype, $reg_desc> =
+            Field::<$valtype, $reg_desc>::new(1, $bit);
 
         #[allow(non_snake_case)]
         #[allow(unused)]
@@ -66,16 +69,19 @@ macro_rules! bitmasks {
             $(
             #[allow(non_upper_case_globals)]
             #[allow(unused)]
-            pub const $valname: FieldValue<$valtype, $reg_desc> = FieldValue::<$valtype, $reg_desc>::new(1, $bit, $value);
+            pub const $valname: FieldValue<$valtype, $reg_desc> =
+                FieldValue::<$valtype, $reg_desc>::new(1, $bit, $value);
             )*
 
             #[allow(non_upper_case_globals)]
             #[allow(unused)]
-            pub const SET: FieldValue<$valtype, $reg_desc> = FieldValue::<$valtype, $reg_desc>::new(1, $bit, 1);
+            pub const SET: FieldValue<$valtype, $reg_desc> =
+                FieldValue::<$valtype, $reg_desc>::new(1, $bit, 1);
 
             #[allow(non_upper_case_globals)]
             #[allow(unused)]
-            pub const CLEAR: FieldValue<$valtype, $reg_desc> = FieldValue::<$valtype, $reg_desc>::new(1, $bit, 0);
+            pub const CLEAR: FieldValue<$valtype, $reg_desc> =
+                FieldValue::<$valtype, $reg_desc>::new(1, $bit, 0);
 
             #[allow(dead_code)]
             #[allow(non_camel_case_types)]
