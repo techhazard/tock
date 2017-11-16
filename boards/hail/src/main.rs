@@ -69,6 +69,7 @@ struct Hail {
     crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
     dac: &'static capsules::dac::Dac<'static>,
     aes: &'static capsules::symmetric_encryption::Crypto<'static, sam4l::aes::Aes>,
+    stfu_holding: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
 }
 
 
@@ -101,6 +102,8 @@ impl Platform for Hail {
             capsules::dac::DRIVER_NUM => f(Some(self.dac)),
 
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
+
+            27 => f(Some(self.stfu_holding)),
             _ => f(None),
         }
     }
@@ -385,6 +388,50 @@ pub unsafe fn reset_handler() {
                                                     &mut capsules::symmetric_encryption::IV));
     hil::symmetric_encryption::SymmetricEncryption::set_client(&sam4l::aes::AES, aes);
 
+
+    //
+    // Flash
+    //
+
+    let mux_flash = static_init!(
+        capsules::virtual_flash::MuxFlash<'static, sam4l::flashcalw::FLASHCALW>,
+        capsules::virtual_flash::MuxFlash::new(&sam4l::flashcalw::FLASH_CONTROLLER));
+    hil::flash::HasClient::set_client(&sam4l::flashcalw::FLASH_CONTROLLER, mux_flash);
+
+    //
+    // Firmware Update
+    //
+    let virtual_flash_stfu_holding = static_init!(
+        capsules::virtual_flash::FlashUser<'static, sam4l::flashcalw::FLASHCALW>,
+        capsules::virtual_flash::FlashUser::new(mux_flash));
+    pub static mut STFU_HOLDING_PAGEBUFFER: sam4l::flashcalw::Sam4lPage = sam4l::flashcalw::Sam4lPage::new();
+
+    let stfu_holding_nv_to_page = static_init!(
+        capsules::nonvolatile_to_pages::NonvolatileToPages<'static,
+            capsules::virtual_flash::FlashUser<'static, sam4l::flashcalw::FLASHCALW>>,
+        capsules::nonvolatile_to_pages::NonvolatileToPages::new(
+            virtual_flash_stfu_holding,
+            &mut STFU_HOLDING_PAGEBUFFER));
+    hil::flash::HasClient::set_client(virtual_flash_stfu_holding, stfu_holding_nv_to_page);
+
+    pub static mut STFU_HOLDING_BUFFER: [u8; 512] = [0; 512];
+    let stfu_holding = static_init!(
+        capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
+        capsules::nonvolatile_storage_driver::NonvolatileStorage::new(
+            stfu_holding_nv_to_page, kernel::Grant::create(),
+            0x60000, // Start address for userspace accessible region
+            0x20000, // Length of userspace accessible region
+            0,       // Start address of kernel accessible region
+            0,       // Length of kernel accessible region
+            &mut STFU_HOLDING_BUFFER));
+    hil::nonvolatile_storage::NonvolatileStorage::set_client(stfu_holding_nv_to_page, stfu_holding);
+
+
+
+
+
+
+
     let hail = Hail {
         console: console,
         gpio: gpio,
@@ -403,6 +450,7 @@ pub unsafe fn reset_handler() {
         crc: crc,
         dac: dac,
         aes: aes,
+        stfu_holding: stfu_holding,
     };
 
     // Need to reset the nRF on boot
