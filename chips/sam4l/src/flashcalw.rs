@@ -67,26 +67,10 @@ enum RegKey {
     GPFRLO,
 }
 
+/// Mechanism for generating a callback (from the scheduler) to this module when
+/// there are no interrupts to do it. In this driver we use it to allow us to
+/// make the read operation look asynchronous even though it's a simple memcpy.
 pub static DEFERED_CALL: AtomicBool = AtomicBool::new(false);
-
-/// High level commands to issue to the flash. Usually to track the state of
-/// a command especially if it's multiple FlashCMDs.
-///
-/// For example an erase is:
-///
-///  1. Unlock Page  (UP)
-///  2. Erase Page   (EP)
-///  3. Lock Page    (LP)
-///
-/// Store what high level command we're doing allows us to track the state and
-/// continue the steps of the command in handle_interrupt.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Command {
-    Read,
-    Write { page: i32 },
-    Erase { page: i32 },
-    None,
-}
 
 /// There are 18 recognized commands for the flash. These are "bare-bones"
 /// commands and values that are written to the Flash's command register to
@@ -120,18 +104,21 @@ pub enum Speed {
     HighSpeed,
 }
 
-/// FlashState is used to track the current state of the flash in high level
-/// command.
-///
-/// Combined with Command, it defines a unique function the flash is preforming.
+/// FlashState is used to track the current state and command of the flash.
 #[derive(Clone, Copy, PartialEq)]
 pub enum FlashState {
     Locking, // The Flash is locking a region
     Unlocking, // The Flash is unlocking a region
     Writing, // The Flash is writing a page
     Erasing, // The Flash is erasing a page
-    Ready, // The Flash is ready to complete a command
-    Unconfigured, // The Flash is unconfigured, call configure()
+    Unconfigured, //   Flash is unconfigured, call configure().
+    Ready, //          Flash is ready to complete a command.
+    Read, //           Performing a read operation.
+    WriteUnlocking { page: i32 }, // Started a write operation.
+    WriteErasing { page: i32 },   // Waiting on the page to erase.
+    WriteWriting,                 // Waiting on the page to actually be written.
+    EraseUnlocking { page: i32 }, // Started an erase operation.
+    EraseErasing,                 // Waiting on the erase to finish.
 }
 
 /// This is a wrapper around a u8 array that is sized to a single page for the
@@ -181,10 +168,8 @@ pub struct FLASHCALW {
     ahb_clock: pm::Clock,
     hramc1_clock: pm::Clock,
     pb_clock: pm::Clock,
-    ready: Cell<bool>,
     client: Cell<Option<&'static hil::flash::Client<FLASHCALW>>>,
     current_state: Cell<FlashState>,
-    current_command: Cell<Command>,
     buffer: TakeCell<'static, Sam4lPage>,
 }
 
@@ -229,10 +214,8 @@ impl FLASHCALW {
             ahb_clock: pm::Clock::HSB(ahb_clk),
             hramc1_clock: pm::Clock::HSB(hramc1_clk),
             pb_clock: pm::Clock::PBB(pb_clk),
-            ready: Cell::new(true),
             client: Cell::new(None),
             current_state: Cell::new(FlashState::Unconfigured),
-            current_command: Cell::new(Command::None),
             buffer: TakeCell::empty(),
         }
     }
@@ -294,9 +277,6 @@ impl FLASHCALW {
         // Disable the interrupt for flash ready.
         self.enable_ready_int(false);
 
-        // Mark the controller as ready.
-        self.ready.set(true);
-
         let error_status = self.get_error_status();
 
         // Since the only interrupt on is FRDY, a command should have
@@ -304,31 +284,35 @@ impl FLASHCALW {
 
         // Check for errors and report to Client if there are any
         if error_status != 0 {
-            // reset commands / ready
-            self.current_command.set(Command::None);
+            let attempted_operation = self.current_state.get();
+
+            // Reset state now that we are ready to do a new operation.
             self.current_state.set(FlashState::Ready);
 
-            self.client.get().map(|client| match self.current_command.get() {
-                Command::Read => {
+            self.client.get().map(|client| match attempted_operation {
+                FlashState::Read => {
                     self.buffer.take().map(|buffer| {
-                            client.read_complete(buffer, hil::flash::Error::FlashError);
-                        });
+                        client.read_complete(buffer, hil::flash::Error::FlashError);
+                    });
                 }
-                Command::Write { .. } => {
+                FlashState::WriteUnlocking { .. } |
+                FlashState::WriteErasing { .. } |
+                FlashState::WriteWriting => {
                     self.buffer.take().map(|buffer| {
-                            client.write_complete(buffer, hil::flash::Error::FlashError);
-                        });
+                        client.write_complete(buffer, hil::flash::Error::FlashError);
+                    });
                 }
-                Command::Erase { .. } => {
+                FlashState::EraseUnlocking { .. } |
+                FlashState::EraseErasing => {
                     client.erase_complete(hil::flash::Error::FlashError);
                 }
-                Command::None => {}
+                _ => {}
             });
         }
 
         // Part of a command succeeded -- continue onto next steps.
-        match self.current_command.get() {
-            Command::Read => {
+        match self.current_state.get() {
+            FlashState::Read => {
                 self.current_state.set(FlashState::Ready);
 
                 self.client.get().map(|client| {
@@ -337,68 +321,50 @@ impl FLASHCALW {
                     });
                 });
             }
-            Command::Write { page } => {
-                match self.current_state.get() {
-                    FlashState::Unlocking => {
-                        self.current_state.set(FlashState::Erasing);
-                        self.flashcalw_erase_page(page);
-                    }
-                    FlashState::Erasing => {
-                        //  Write page buffer isn't really a command, and
-                        //  clear page buffer doesn't trigger an interrupt thus
-                        //  I'm combining these with an actual command, write_page,
-                        //  which generates and interrupt and saves the page.
-                        self.clear_page_buffer();
-                        self.write_to_page_buffer(page as usize * PAGE_SIZE as usize);
-
-                        self.current_state.set(FlashState::Writing);
-                        self.flashcalw_write_page(page);
-                    }
-                    FlashState::Writing => {
-                        // Flush the cache
-                        self.invalidate_cache();
-
-                        self.current_state.set(FlashState::Ready);
-                        self.current_command.set(Command::None);
-
-                        self.client.get().map(|client| {
-                            self.buffer.take().map(|buffer| {
-                                client.write_complete(buffer, hil::flash::Error::CommandComplete);
-                            });
-                        });
-                    }
-                    _ => {
-                        assert!(false) /* should never reach here */
-                    }
-
-                }
+            FlashState::WriteUnlocking { page } => {
+                self.current_state.set(FlashState::WriteErasing {page: page});
+                self.flashcalw_erase_page(page);
             }
-            Command::Erase { page } => {
-                match self.current_state.get() {
-                    FlashState::Unlocking => {
-                        self.current_state.set(FlashState::Erasing);
-                        self.flashcalw_erase_page(page);
-                    }
-                    FlashState::Erasing => {
-                        self.current_state.set(FlashState::Ready);
-                        self.current_command.set(Command::None);
+            FlashState::WriteErasing { page } => {
+                //  Write page buffer isn't really a command, and
+                //  clear page buffer doesn't trigger an interrupt thus
+                //  I'm combining these with an actual command, write_page,
+                //  which generates and interrupt and saves the page.
+                self.clear_page_buffer();
+                self.write_to_page_buffer(page as usize * PAGE_SIZE as usize);
 
-                        self.client.get().map(|client| {
-                            client.erase_complete(hil::flash::Error::CommandComplete);
-                        });
-                    }
-                    _ => {
-                        assert!(false); /* should never happen. */
-                    }
-                }
+                self.current_state.set(FlashState::WriteWriting);
+                self.flashcalw_write_page(page);
             }
-            Command::None => {
+            FlashState::WriteWriting => {
+                // Flush the cache
+                self.invalidate_cache();
+
+                self.current_state.set(FlashState::Ready);
+
+                self.client.get().map(|client| {
+                    self.buffer.take().map(|buffer| {
+                        client.write_complete(buffer, hil::flash::Error::CommandComplete);
+                    });
+                });
+            }
+            FlashState::EraseUnlocking { page } => {
+                self.current_state.set(FlashState::EraseErasing);
+                self.flashcalw_erase_page(page);
+            }
+            FlashState::EraseErasing => {
+                self.current_state.set(FlashState::Ready);
+
+                self.client.get().map(|client| {
+                    client.erase_complete(hil::flash::Error::CommandComplete);
+                });
+            }
+            _ => {
                 self.current_state.set(FlashState::Ready);
             }
 
         }
     }
-
 
     /// FLASH properties.
     pub fn get_flash_size(&self) -> u32 {
@@ -632,8 +598,7 @@ impl FLASHCALW {
         }
         if command != FlashCMD::QPRUP && command != FlashCMD::QPR && command != FlashCMD::CPB &&
            command != FlashCMD::HSEN {
-            // Enable ready interrupt and mark the controller as being unavailable.
-            self.ready.set(false);
+            // Enable ready interrupt.
             self.enable_ready_int(true);
         }
 
@@ -730,8 +695,8 @@ impl FLASHCALW {
         self.issue_command(FlashCMD::WP, page_number);
     }
 
-    /// There's a user_page that isn't contigous with the rest of the flash. Currently
-    /// it's not being used.
+    /// There's a user_page that isn't contiguous with the rest of the flash.
+    /// Currently it's not being used.
     #[allow(dead_code)]
     fn quick_user_page_read(&self) -> bool {
         self.issue_command(FlashCMD::QPRUP, -1);
@@ -753,8 +718,8 @@ impl FLASHCALW {
         self.issue_command(FlashCMD::WUP, -1);
     }
 
-    //  Instead of having several memset/memcpy functions as Atmel's ASF
-    //  implementation will only have one to write to the page buffer.
+    // Instead of having several memset/memcpy functions as Atmel's ASF
+    // implementation will only have one to write to the page buffer.
     fn write_to_page_buffer(&self, pg_buff_addr: usize) {
         let mut page_buffer: *mut u8 = pg_buff_addr as *mut u8;
 
@@ -846,6 +811,7 @@ impl FLASHCALW {
             return ReturnCode::EINVAL;
         }
 
+        // Actually do a copy from flash into the buffer.
         let mut byte: *const u8 = address as *const u8;
         unsafe {
             for i in 0..size {
@@ -854,15 +820,13 @@ impl FLASHCALW {
             }
         }
 
-        self.current_command.set(Command::Read);
+        self.current_state.set(FlashState::Read);
         // Hold on to the buffer for the callback.
         self.buffer.replace(buffer);
 
         // This is kind of strange, but because read() in this case is
         // synchronous, we still need to schedule as if we had an interrupt so
-        // we can call the callback.
-        //
-        //TODO: this used to be here... flash_handler(); would `handle_interrupt()` work?
+        // we can allow this function to return and then call the callback.
         DEFERED_CALL.store(true, Ordering::Relaxed);
 
         ReturnCode::SUCCESS
@@ -874,7 +838,7 @@ impl FLASHCALW {
             pm::enable_clock(self.ahb_clock);
         }
 
-        // Ff we're not ready don't take the command.
+        // If we're not ready don't take the command.
         if self.current_state.get() != FlashState::Ready {
             return ReturnCode::EBUSY;
         }
@@ -882,8 +846,7 @@ impl FLASHCALW {
         // Save the buffer for the future write.
         self.buffer.replace(data);
 
-        self.current_state.set(FlashState::Unlocking);
-        self.current_command.set(Command::Write { page: page_num });
+        self.current_state.set(FlashState::WriteUnlocking { page: page_num });
         self.lock_page_region(page_num, false);
         ReturnCode::SUCCESS
     }
@@ -897,8 +860,7 @@ impl FLASHCALW {
             return ReturnCode::EBUSY;
         }
 
-        self.current_state.set(FlashState::Unlocking);
-        self.current_command.set(Command::Erase { page: page_num });
+        self.current_state.set(FlashState::EraseUnlocking { page: page_num });
         self.lock_page_region(page_num, false);
         ReturnCode::SUCCESS
     }
