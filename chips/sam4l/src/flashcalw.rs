@@ -181,7 +181,6 @@ pub struct FLASHCALW {
     ahb_clock: pm::Clock,
     hramc1_clock: pm::Clock,
     pb_clock: pm::Clock,
-    error_status: Cell<u32>,
     ready: Cell<bool>,
     client: Cell<Option<&'static hil::flash::Client<FLASHCALW>>>,
     current_state: Cell<FlashState>,
@@ -230,7 +229,6 @@ impl FLASHCALW {
             ahb_clock: pm::Clock::HSB(ahb_clk),
             hramc1_clock: pm::Clock::HSB(hramc1_clk),
             pb_clock: pm::Clock::PBB(pb_clk),
-            error_status: Cell::new(0),
             ready: Cell::new(true),
             client: Cell::new(None),
             current_state: Cell::new(FlashState::Unconfigured),
@@ -293,17 +291,16 @@ impl FLASHCALW {
 
 
     pub fn handle_interrupt(&self) {
-        //  disable the interrupt line for flash
+        // Disable the interrupt for flash ready.
         self.enable_ready_int(false);
 
-        //  mark the controller as ready and clear pending interrupt
+        // Mark the controller as ready.
         self.ready.set(true);
 
         let error_status = self.get_error_status();
-        self.error_status.set(error_status);
 
-        //  Since the only interrupt on is FRDY, a command should have
-        //  either completed or failed at this point.
+        // Since the only interrupt on is FRDY, a command should have
+        // either completed or failed at this point.
 
         // Check for errors and report to Client if there are any
         if error_status != 0 {
@@ -329,8 +326,7 @@ impl FLASHCALW {
             });
         }
 
-        //  Part of a command succeeded -- continue onto next steps.
-
+        // Part of a command succeeded -- continue onto next steps.
         match self.current_command.get() {
             Command::Read => {
                 self.current_state.set(FlashState::Ready);
@@ -345,8 +341,7 @@ impl FLASHCALW {
                 match self.current_state.get() {
                     FlashState::Unlocking => {
                         self.current_state.set(FlashState::Erasing);
-                        self.flashcalw_erase_page(page, true);
-                        DEFERED_CALL.store(true, Ordering::Relaxed);
+                        self.flashcalw_erase_page(page);
                     }
                     FlashState::Erasing => {
                         //  Write page buffer isn't really a command, and
@@ -382,7 +377,7 @@ impl FLASHCALW {
                 match self.current_state.get() {
                     FlashState::Unlocking => {
                         self.current_state.set(FlashState::Erasing);
-                        self.flashcalw_erase_page(page, true);
+                        self.flashcalw_erase_page(page);
                     }
                     FlashState::Erasing => {
                         self.current_state.set(FlashState::Ready);
@@ -637,7 +632,7 @@ impl FLASHCALW {
         }
         if command != FlashCMD::QPRUP && command != FlashCMD::QPR && command != FlashCMD::CPB &&
            command != FlashCMD::HSEN {
-            //  enable ready int and mark the controller as being unavaliable.
+            // Enable ready interrupt and mark the controller as being unavailable.
             self.ready.set(false);
             self.enable_ready_int(true);
         }
@@ -657,9 +652,12 @@ impl FLASHCALW {
 
         cmd_regs.fcmd.set(reg_val); // write the cmd
 
-        if command == FlashCMD::QPRUP || command == FlashCMD::QPR || command == FlashCMD::CPB ||
-           command == FlashCMD::HSEN {
-            self.error_status.set(self.get_error_status());
+        // Since we don't enable interrupts for these commands, spin wait
+        // until they are finished. In particular, QPR and QPRUP will not issue
+        // interrupts (see datasheet 14.6 paragraph 2).
+        if command == FlashCMD::QPRUP || command == FlashCMD::QPR ||
+           command == FlashCMD::CPB || command == FlashCMD::HSEN {
+            while (cmd_regs.fsr.get() & 0x01) != 0x01 {}
         }
     }
 
@@ -718,25 +716,14 @@ impl FLASHCALW {
         (status & bit!(5)) != 0
     }
 
+    #[allow(dead_code)]
     fn quick_page_read(&self, page_number: i32) -> bool {
         self.issue_command(FlashCMD::QPR, page_number);
         self.is_page_erased()
     }
 
-    fn flashcalw_erase_page(&self, page_number: i32, check: bool) -> bool {
-        let mut page_erased = true;
-
+    fn flashcalw_erase_page(&self, page_number: i32) {
         self.issue_command(FlashCMD::EP, page_number);
-        if check {
-            let mut error_status: u32 = self.error_status.get();
-            page_erased = self.quick_page_read(-1);
-
-            //  issue command should have changed the error status.
-            error_status |= self.error_status.get();
-            self.error_status.set(error_status);
-        }
-
-        page_erased
     }
 
     fn flashcalw_write_page(&self, page_number: i32) {
@@ -794,11 +781,6 @@ impl FLASHCALW {
                 }
             }
         });
-    }
-
-    // returns the error_status (useful for debugging).
-    pub fn debug_error_status(&self) -> u32 {
-        self.error_status.get()
     }
 }
 
