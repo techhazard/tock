@@ -24,6 +24,7 @@
 use core::cell::Cell;
 use core::mem;
 use core::ops::{Index, IndexMut};
+use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::ReturnCode;
 use kernel::common::VolatileCell;
 use kernel::common::take_cell::TakeCell;
@@ -65,6 +66,8 @@ enum RegKey {
     GPFRHI,
     GPFRLO,
 }
+
+pub static DEFERED_CALL: AtomicBool = AtomicBool::new(false);
 
 /// High level commands to issue to the flash. Usually to track the state of
 /// a command especially if it's multiple FlashCMDs.
@@ -343,6 +346,7 @@ impl FLASHCALW {
                     FlashState::Unlocking => {
                         self.current_state.set(FlashState::Erasing);
                         self.flashcalw_erase_page(page, true);
+                        DEFERED_CALL.store(true, Ordering::Relaxed);
                     }
                     FlashState::Erasing => {
                         //  Write page buffer isn't really a command, and
@@ -877,6 +881,7 @@ impl FLASHCALW {
         // we can call the callback.
         //
         //TODO: this used to be here... flash_handler(); would `handle_interrupt()` work?
+        DEFERED_CALL.store(true, Ordering::Relaxed);
 
         ReturnCode::SUCCESS
     }
