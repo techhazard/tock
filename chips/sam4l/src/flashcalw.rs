@@ -24,11 +24,11 @@
 use core::cell::Cell;
 use core::mem;
 use core::ops::{Index, IndexMut};
-use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::ReturnCode;
 use kernel::common::VolatileCell;
 use kernel::common::take_cell::TakeCell;
 use kernel::hil;
+use helpers::{DeferedCall, Task};
 use pm;
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
@@ -67,10 +67,7 @@ enum RegKey {
     GPFRLO,
 }
 
-/// Mechanism for generating a callback (from the scheduler) to this module when
-/// there are no interrupts to do it. In this driver we use it to allow us to
-/// make the read operation look asynchronous even though it's a simple memcpy.
-pub static DEFERED_CALL: AtomicBool = AtomicBool::new(false);
+static DEFERED_CALL: DeferedCall = unsafe { DeferedCall::new(Task::Flashcalw) };
 
 /// There are 18 recognized commands for the flash. These are "bare-bones"
 /// commands and values that are written to the Flash's command register to
@@ -827,7 +824,7 @@ impl FLASHCALW {
         // This is kind of strange, but because read() in this case is
         // synchronous, we still need to schedule as if we had an interrupt so
         // we can allow this function to return and then call the callback.
-        DEFERED_CALL.store(true, Ordering::Relaxed);
+        DEFERED_CALL.set();
 
         ReturnCode::SUCCESS
     }
