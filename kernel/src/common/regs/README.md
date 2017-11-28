@@ -90,6 +90,35 @@ bitfields! [
 ]
 ```
 
+## Register Interface Summary
+
+There are three types provided by the register interface: `ReadOnly`, `WriteOnly`, and `ReadWrite`. They provide the following functions:
+
+```rust
+ReadOnly<T: IntLike, R: RegisterLongName = ()>
+.get() -> T                                 // Get the raw register value
+.read(field: Field<T, R>) -> T              // Read the value of the given field
+.is_set(field: Field<T, R>) -> bool         // Check if a one-bit field is set
+.matches(value: FieldValue<T, R>) -> bool   // Check if one or more fields match a value
+
+WriteOnly<T: IntLike, R: RegisterLongName = ()>
+.set(value: T)                              // Set the raw register value
+.write(value: FieldValue<T, R>)             // Write the value of one or more fields,
+                                            //  overwriting other fields to zero
+
+ReadWrite<T: IntLike, R: RegisterLongName = ()>
+.get() -> T                                 // Get the raw register value
+.set(value: T)                              // Set the raw register value
+.read(field: Field<T, R>) -> T              // Read the value of the given field
+.write(value: FieldValue<T, R>)             // Write the value of one or more fields,
+                                            //  overwriting other fields to zero
+.modify(value: FieldValue<T, R>)            // Write the value of one or more fields,
+                                            //  leaving other fields unchanged
+.is_set(field: Field<T, R>) -> bool         // Check if a one-bit field is set
+.matches(value: FieldValue<T, R>) -> bool   // Check if one or more fields match a value
+```
+
+The first type parameter (the `IntLike` type) is `u8`, `u16`, or `u32`.
 
 ## Example: Using registers and bitfields
 
@@ -110,7 +139,7 @@ regs.cr.set(regs.cr.get() + 1);
 // READ
 // -----------------------------------------------------------------------------
 
-// `range` will contain the unshifted value of the RANGE field, e.g. 0, 1, 2, or 3.
+// `range` will contain the value of the RANGE field, e.g. 0, 1, 2, or 3.
 // The type annotation is not necessary, but provided for clarity here.
 let range: u8 = regs.cr.read(CR::RANGE);
 
@@ -203,5 +232,35 @@ regs.cr.modify(CR::RANGE.val(1));
 // This line will not compile, because CR is associated with the Control group,
 // while regs.s is associated with the Status group.
 regs.s.modify(CR::RANGE.val(1));
+```
 
+## Naming conventions
+
+There are several related names in the register definitions. Below is a description of the naming convention for each:
+
+```rust
+use common::regs::ReadWrite;
+
+#[repr(C, packed)]
+struct Registers {
+    // The register name in the struct should be a lowercase version of the 
+    // register abbreviation, as written in the datasheet:
+    cr: ReadWrite<u8, Control>,
+}
+
+bitfields! [
+    u8,
+
+    // The first name should be the capitalized abbreviated register name, as given in the datasheet.
+    // The second name should be the long descriptive register name, camelcase, without the word 'register'.
+    CR Control [
+        // The field name should be the capitalized abbreviated field name, as given in the datasheet.
+        RANGE (Mask(0b11), 4) [
+            // Each of the field values should be camelcase, as descriptive of their value as possible.
+            VeryHigh = 0,
+            High = 1,
+            Low = 2
+        ]
+    ]
+]
 ```
