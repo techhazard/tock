@@ -286,10 +286,15 @@ fn do_work(input: &elf::File,
                          mem::size_of::<TbfHeaderWriteableFlashRegion>();
     }
 
+    // Calculate the offset between the start of the flash region and the actual
+    // app code. Also need to get the padding size.
+    let app_start_offset = align8!(header_length);
+    let post_header_pad = app_start_offset as usize - header_length;
+
     // Now we can calculate the entire size of the app in flash.
-    let mut total_size = (header_length + rel_data.len() + text.data.len() + got.data.len() +
-                          data.data.len() +
-                          appstate.data.len()) as u32;
+    let mut total_size = (header_length + post_header_pad + rel_data.len() + text.data.len() +
+                          got.data.len() +
+                          data.data.len() + appstate.data.len()) as u32;
 
     let ending_pad = if total_size.count_ones() > 1 {
         let power2len = cmp::max(1 << (32 - total_size.leading_zeros()), 512);
@@ -299,14 +304,9 @@ fn do_work(input: &elf::File,
     };
     total_size += ending_pad;
 
-    // Calculate the offset between the start of the flash region and the actual
-    // app code. Also need to get the padding size.
-    let app_start_offset = align8!(header_length);
-    let post_header_pad = app_start_offset as usize - header_length;
-
     // To start we just restrict the app from writing all of the space before
     // its actual code and whatnot.
-    let protected_size = app_start_offset;
+    let protected_size = 0;
 
     // First up is the app writeable app_state section. If this is not used or
     // non-existent, it will just be zero and won't matter. But we put it first
@@ -318,7 +318,7 @@ fn do_work(input: &elf::File,
     let post_appstate_pad = relocation_data_offset - (appstate_offset + appstate_size);
     let text_offset = relocation_data_offset + (relocation_data_size as u32);
     let text_size = text.shdr.size as u32;
-    let init_fn_offset = (input.ehdr.entry - text.shdr.addr) as u32 + text_offset;
+    let init_fn_offset = (input.ehdr.entry - text.shdr.addr) as u32 + (relocation_data_size as u32);
     let got_offset = text_offset + text_size;
     let got_size = got.shdr.size as u32;
     let data_offset = got_offset + got_size;

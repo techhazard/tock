@@ -8,7 +8,6 @@
 
 use core::cell::Cell;
 use core::cmp;
-use core::mem;
 
 use dma::DMAChannel;
 use dma::DMAClient;
@@ -22,7 +21,6 @@ use kernel::hil::spi::ClockPhase;
 use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::SpiMasterClient;
 use kernel::hil::spi::SpiSlaveClient;
-use nvic;
 use pm;
 
 /// The registers used to interface with the hardware
@@ -177,7 +175,7 @@ impl Spi {
     }
 
     fn init_as_role(&self, role: SpiRole) {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
 
         self.role.set(role);
         self.enable_clock();
@@ -206,7 +204,7 @@ impl Spi {
     }
 
     pub fn enable(&self) {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
 
         self.enable_clock();
         regs.cr.set(spi_consts::cr::SPIEN);
@@ -217,7 +215,7 @@ impl Spi {
     }
 
     pub fn disable(&self) {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
 
         self.dma_read.get().map(|read| read.disable());
         self.dma_write.get().map(|write| write.disable());
@@ -310,7 +308,7 @@ impl Spi {
     pub fn set_active_peripheral(&self, peripheral: Peripheral) {
         // Slave cannot set active peripheral
         if self.role.get() == SpiRole::SpiMaster {
-            let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+            let regs: &SpiRegisters = unsafe { &*self.registers };
             let peripheral_number: u32 = match peripheral {
                 Peripheral::Peripheral0 => spi_consts::mr::PCS0,
                 Peripheral::Peripheral1 => spi_consts::mr::PCS1,
@@ -326,7 +324,7 @@ impl Spi {
     /// Returns the currently active peripheral
     pub fn get_active_peripheral(&self) -> Peripheral {
         if self.role.get() == SpiRole::SpiMaster {
-            let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+            let regs: &SpiRegisters = unsafe { &*self.registers };
 
             let mr = regs.mr.get();
             let peripheral_number = mr & (spi_consts::mr::PCS_MASK);
@@ -350,7 +348,7 @@ impl Spi {
     /// Returns the value of CSR0, CSR1, CSR2, or CSR3,
     /// whichever corresponds to the active peripheral
     fn read_active_csr(&self) -> u32 {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
 
         match self.get_active_peripheral() {
             Peripheral::Peripheral0 => regs.csr0.get(),
@@ -362,7 +360,7 @@ impl Spi {
     /// Sets the Chip Select Register (CSR) of the active peripheral
     /// (CSR0, CSR1, CSR2, or CSR3).
     fn write_active_csr(&self, value: u32) {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
 
         match self.get_active_peripheral() {
             Peripheral::Peripheral0 => regs.csr0.set(value),
@@ -385,7 +383,7 @@ impl Spi {
     }
 
     pub fn handle_interrupt(&self) {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
         let sr = regs.sr.get();
 
         self.slave_client.get().map(|client| {
@@ -472,7 +470,7 @@ impl spi::SpiMaster for Spi {
     /// Write a byte to the SPI and discard the read; if an
     /// asynchronous operation is outstanding, do nothing.
     fn write_byte(&self, out_byte: u8) {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
 
         let tdr = (out_byte as u32) & spi_consts::tdr::TD;
         // Wait for data to leave TDR and enter serializer, so TDR is free
@@ -490,7 +488,7 @@ impl spi::SpiMaster for Spi {
     /// Write a byte to the SPI and return the read; if an
     /// asynchronous operation is outstanding, do nothing.
     fn read_write_byte(&self, val: u8) -> u8 {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
 
         self.write_byte(val);
         // Wait for receive data register full
@@ -588,7 +586,7 @@ impl spi::SpiSlave for Spi {
     /// This sets the value in the TDR register, to be sent as soon as the
     /// chip select pin is low.
     fn set_write_byte(&self, write_byte: u8) {
-        let regs: &mut SpiRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &SpiRegisters = unsafe { &*self.registers };
         regs.tdr.set(write_byte as u32);
     }
 
@@ -663,5 +661,3 @@ impl DMAClient for Spi {
         }
     }
 }
-
-interrupt_handler!(spi_interrupt_handler, SPI);

@@ -11,6 +11,7 @@ tutorial on how to use them in drivers or applications.
 
 - [Overview of System Calls in Tock](#overview-of-system-calls-in-tock)
 - [Process State](#process-state)
+- [Startup](#startup)
 - [The System Calls](#the-system-calls)
   * [0: Yield](#0-yield)
     + [Arguments](#arguments)
@@ -78,6 +79,18 @@ In Tock, a process can be in one of three states:
  Tock. Processes enter the Fault state by performing an illegal operation, such
  as accessing memory outside of their address space.
 
+## Startup
+
+Upon process initialization, a single function call task is added to it's
+callback queue. The function is determined by the ENTRY point in the process
+TBF header (typically the `_start` symbol) and is passed the following
+arguments in registers `r0` - `r3`:
+
+  * r0: the base address of the process code
+  * r1: the base address of the processes allocated memory region
+  * r2: the total amount of memory in its region
+  * r3: the current process memory break
+
 ## The System Calls
 
 All system calls except Yield (which cannot fail) return an integer return code
@@ -118,6 +131,10 @@ process.
 If a process has enqueued callbacks waiting to execute when Yield is called, the
 process immediately re-enters the Running state and the first callback runs.
 
+```rust
+yield()
+```
+
 #### Arguments
 
 None.
@@ -131,6 +148,10 @@ None.
 
 Subscribe assigns callback functions to be executed in response to various
 events.
+
+```rust
+subscribe(driver: u32, subscribe_number: u32, callback: u32, userdata: u32) -> ReturnCode as u32
+```
 
 #### Arguments
 
@@ -157,6 +178,10 @@ arguments.
 ### 2: Command
 
 Command instructs the driver to perform a specific action.
+
+```rust
+command(driver: u32, command_number: u32, argument1: u32, argument2: u32) -> ReturnCode as u32
+```
 
 #### Arguments
 
@@ -190,6 +215,10 @@ additional meaning such as the number of devices present, as is the case in the
 
 Allow marks a region of memory as shared between the kernel and application.
 
+```rust
+allow(driver: u32, allow_number: u32, pointer: usize, size: u32) -> ReturnCode as u32
+```
+
 #### Arguments
 
  - `driver`: An integer specifying which driver should be granted access.
@@ -222,6 +251,10 @@ retrieve pointers to its allocated memory space, provides a mechanism for
 the process to tell the kernel where its stack and heap start, and other
 operations involving process memory.
 
+```rust
+memop(op_type: u32, argument: u32) -> [[ VARIES ]] as u32
+```
+
 #### Arguments
 
  - `op_type`: An integer indicating whether this is a `brk` (0), a `sbrk` (1),
@@ -229,7 +262,7 @@ operations involving process memory.
  - `argument`: The argument to `brk`, `sbrk`, or other call.
 
 Each memop operation is specific and details of each call can be found in
-the memop syscall documentation.
+the [memop syscall documentation](syscalls/memop.md).
 
 #### Return
 

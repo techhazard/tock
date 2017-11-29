@@ -15,7 +15,7 @@ developing Tock.
 
 #### Rust (nightly)
 
-We are using `rustc 1.22.0-nightly (325ba23d5 2017-09-19)`. We recommend
+We are using `rustc 1.23.0-nightly (6160040d8 2017-11-19)`. We recommend
 installing it with [rustup](http://www.rustup.rs) so you can manage multiple
 versions of Rust and continue using stable versions for other Rust code:
 
@@ -30,7 +30,7 @@ to your `$PATH`.
 Then install the correct nightly version of Rust:
 
 ```bash
-$ rustup install nightly-2017-09-20
+$ rustup install nightly-2017-11-18
 ```
 
 #### Xargo
@@ -181,7 +181,7 @@ such as easy to manage serial connections, and the ability to list, add,
 replace, and remove applications over JTAG (or USB if a bootloader is
 installed).
 
-1. [tockloader](https://github.com/helena-project/tockloader) (version 0.7.1)
+1. [tockloader](https://github.com/helena-project/tockloader) (version >= 0.8)
 
 Installing applications over JTAG, depending on your JTAG Debugger, you will
 need one of:
@@ -191,11 +191,11 @@ need one of:
 
 #### `tockloader`
 
-Tock requires `tockloader` version `0.7.1`. To install:
+Tock requires `tockloader`. To install:
 
 ```bash
-(Linux): sudo pip3 install tockloader==0.7.1
-(MacOS): pip3 install tockloader==0.7.1
+(Linux): sudo pip3 install tockloader
+(MacOS): pip3 install tockloader
 ```
 
 #### `openocd`

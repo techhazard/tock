@@ -6,11 +6,9 @@
 //! - Date: May 26th, 2017
 
 use core::cell::Cell;
-use core::mem;
 use kernel::ReturnCode;
 use kernel::common::VolatileCell;
 use kernel::hil;
-use nvic;
 use pm::{self, Clock, PBAClock};
 
 #[repr(C, packed)]
@@ -54,14 +52,13 @@ impl Dac {
 
 impl hil::dac::DacChannel for Dac {
     fn initialize(&self) -> ReturnCode {
-        let regs: &mut DacRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &DacRegisters = unsafe { &*self.registers };
         if !self.enabled.get() {
             self.enabled.set(true);
 
             // Start the APB clock (CLK_DACC)
             unsafe {
                 pm::enable_clock(Clock::PBA(PBAClock::DACC));
-                nvic::enable(nvic::NvicIdx::DACC);
             }
 
             // Reset DACC
@@ -82,7 +79,7 @@ impl hil::dac::DacChannel for Dac {
 
 
     fn set_value(&self, value: usize) -> ReturnCode {
-        let regs: &mut DacRegisters = unsafe { mem::transmute(self.registers) };
+        let regs: &DacRegisters = unsafe { &*self.registers };
         if !self.enabled.get() {
             ReturnCode::EOFF
         } else {
@@ -99,5 +96,3 @@ impl hil::dac::DacChannel for Dac {
         }
     }
 }
-
-interrupt_handler!(dacc_handler, DACC);

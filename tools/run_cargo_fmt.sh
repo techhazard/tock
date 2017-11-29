@@ -5,6 +5,12 @@
 # Note: We install a local copy of rustfmt so as not to interfere with any
 # other use of rustfmt on the machine
 RUSTFMT_VERSION=0.7.1
+export RUSTUP_TOOLCHAIN=nightly-2017-11-18
+
+if [[ $(rustc --version) != "rustc 1.23.0-nightly (6160040d8 2017-11-18)" ]]; then
+	rustup install $RUSTUP_TOOLCHAIN || (echo "Failed to install rustc. Please read doc/Getting_Started.md"; exit 1)
+fi
+
 
 # Format overwrites changes, which is probably good, but it's nice to see
 # what it has done
@@ -68,9 +74,17 @@ if [ "$1" == "diff" ]; then
 	done
 	exit $FAIL
 else
+	let FAIL=0
 	for f in $(find . | grep Cargo.toml); do
 		pushd $(dirname $f) > /dev/null
-		cargo-fmt -- --write-mode=overwrite
+		cargo-fmt -- --write-mode=overwrite || let FAIL=FAIL+1
 		popd > /dev/null
 	done
+
+	if [[ $FAIL -ne 0 ]]; then
+		echo
+		echo "$(tput bold)Error running rustfmt.$(tput sgr0)"
+		echo "See above for details"
+	fi
+	exit $FAIL
 fi
