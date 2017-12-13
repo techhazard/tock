@@ -20,10 +20,10 @@ struct Registers {
     // Control register: read-write
     // The 'Control' parameter constrains this register to only use fields from
     // a certain group (defined below in the bitfields section).
-    cr: ReadWrite<u8, Control::Register>,
+    control: ReadWrite<u8, Control::Register>,
 
     // Status register: read-only
-    s: ReadOnly<u8, Status::Register>
+    status: ReadOnly<u8, Status::Register>
 
     // Registers can be bytes, halfwords, or words:
     // Note that the second type parameter can be omitted, meaning that there
@@ -144,7 +144,7 @@ in the previous two sections. We also have an immutable reference to the
 // -----------------------------------------------------------------------------
 
 // Get or set the raw value of the register directly. Nothing fancy:
-regs.cr.set(regs.cr.get() + 1);
+regs.control.set(regs.control.get() + 1);
 
 
 // -----------------------------------------------------------------------------
@@ -153,10 +153,10 @@ regs.cr.set(regs.cr.get() + 1);
 
 // `range` will contain the value of the RANGE field, e.g. 0, 1, 2, or 3.
 // The type annotation is not necessary, but provided for clarity here.
-let range: u8 = regs.cr.read(Control::RANGE);
+let range: u8 = regs.control.read(Control::RANGE);
 
 // `en` will be 0 or 1
-let en: u8 = regs.cr.read(Control::EN);
+let en: u8 = regs.control.read(Control::EN);
 
 
 // -----------------------------------------------------------------------------
@@ -164,23 +164,23 @@ let en: u8 = regs.cr.read(Control::EN);
 // -----------------------------------------------------------------------------
 
 // Write a value to a bitfield without altering the values in other fields:
-regs.cr.modify(Control::RANGE.val(2)); // Leaves EN, INT unchanged
+regs.control.modify(Control::RANGE.val(2)); // Leaves EN, INT unchanged
 
 // Named constants can be used instead of the raw values:
-regs.cr.modify(Control::RANGE::VeryHigh);
+regs.control.modify(Control::RANGE::VeryHigh);
 
 // Another example of writing a field with a raw value:
-regs.cr.modify(Control::EN.val(0)); // Leaves RANGE, INT unchanged
+regs.control.modify(Control::EN.val(0)); // Leaves RANGE, INT unchanged
 
 // For one-bit fields, the named values SET and CLEAR are automatically
 // defined:
-regs.cr.modify(Control::EN::SET);
+regs.control.modify(Control::EN::SET);
 
 // Write multiple values at once, without altering other fields:
-regs.cr.modify(Control::EN::CLEAR + Control::RANGE::Low); // INT unchanged
+regs.control.modify(Control::EN::CLEAR + Control::RANGE::Low); // INT unchanged
 
 // Any number of non-overlapping fields can be combined:
-regs.cr.modify(Control::EN::CLEAR + Control::RANGE::High + CR::INT::SET);
+regs.control.modify(Control::EN::CLEAR + Control::RANGE::High + CR::INT::SET);
 
 
 // -----------------------------------------------------------------------------
@@ -188,14 +188,14 @@ regs.cr.modify(Control::EN::CLEAR + Control::RANGE::High + CR::INT::SET);
 // -----------------------------------------------------------------------------
 
 // Same interface as modify, except that all unspecified fields are overwritten to zero.
-regs.cr.write(Control::RANGE.val(1)); // implictly sets all other bits to zero
+regs.control.write(Control::RANGE.val(1)); // implictly sets all other bits to zero
 
 // -----------------------------------------------------------------------------
 // BITFLAGS
 // -----------------------------------------------------------------------------
 
 // For one-bit fields, easily check if they are set or clear:
-let txcomplete: bool = regs.s.is_set(Status::TXCOMPLETE);
+let txcomplete: bool = regs.status.is_set(Status::TXCOMPLETE);
 
 // -----------------------------------------------------------------------------
 // MATCHING
@@ -204,13 +204,13 @@ let txcomplete: bool = regs.s.is_set(Status::TXCOMPLETE);
 // You can also query a specific register state easily with `matches`:
 
 // Doesn't care about the state of any field except TXCOMPLETE and MODE:
-let ready: bool = regs.s.matches(Status::TXCOMPLETE:SET +
+let ready: bool = regs.status.matches(Status::TXCOMPLETE:SET +
                                  Status::MODE::FullDuplex);
 
 // This is very useful for awaiting for a specific condition:
-while !regs.s.matches(Status::TXCOMPLETE::SET +
-                      Status::RXCOMPLETE::SET +
-                      Status::TXINTERRUPT::CLEAR) {}
+while !regs.status.matches(Status::TXCOMPLETE::SET +
+                           Status::RXCOMPLETE::SET +
+                           Status::TXINTERRUPT::CLEAR) {}
 ```
 
 Note that `modify` performs exactly one volatile load and one volatile store,
@@ -237,13 +237,13 @@ with a register of the type `ReadWrite<_, Control>` (or `ReadOnly/WriteOnly`,
 etc). For instance, if we have the bitfields and registers as defined above,
 
 ```rust
-// This line compiles, because CR and regs.cr are both associated with the
+// This line compiles, because CR and regs.control are both associated with the
 // Control group of bitfields.
-regs.cr.modify(Control::RANGE.val(1));
+regs.control.modify(Control::RANGE.val(1));
 
 // This line will not compile, because CR is associated with the Control group,
-// while regs.s is associated with the Status group.
-regs.s.modify(Control::RANGE.val(1));
+// while regs.status is associated with the Status group.
+regs.status.modify(Control::RANGE.val(1));
 ```
 
 ## Naming conventions
@@ -258,7 +258,7 @@ use common::regs::ReadWrite;
 struct Registers {
     // The register name in the struct should be a lowercase version of the
     // register abbreviation, as written in the datasheet:
-    cr: ReadWrite<u8, Control::Register>,
+    control: ReadWrite<u8, Control::Register>,
 }
 
 register_bitfields! [
