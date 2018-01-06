@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
+set -e
+
 # Peg a rustfmt version while things are unstable
 #
 # Note: We install a local copy of rustfmt so as not to interfere with any
 # other use of rustfmt on the machine
-RUSTFMT_VERSION=0.7.1
+RUSTFMT_VERSION=0.3.4
 export RUSTUP_TOOLCHAIN=nightly-2018-01-05
 
 if [[ $(rustc --version) != "rustc 1.24.0-nightly (8e7a609e6 2018-01-04)" ]]; then
@@ -48,7 +50,7 @@ if [ ! "$CI" == "true" ]; then
 	# Check to make sure that cargo format is installed
 	if [ ! -x tools/local_cargo/bin/rustfmt ]; then
 		needs_install=true
-	elif [ $(tools/local_cargo/bin/rustfmt --version | cut -d' ' -f1) != "$RUSTFMT_VERSION" ]; then
+	elif [[ $(tools/local_cargo/bin/rustfmt --version | cut -d'-' -f1) != "$RUSTFMT_VERSION" ]]; then
 		needs_install=true
 	fi
 
@@ -57,16 +59,34 @@ if [ ! "$CI" == "true" ]; then
 		echo "(This will take a few minutes)"
 		echo ""
 		mkdir -p tools/local_cargo
-		cargo install --root tools/local_cargo --vers $RUSTFMT_VERSION --force rustfmt
+
+		pushd tools/local_cargo
+		mkdir -p .cargo
+		cat > .cargo/config <<EOL
+[build]
+rustflags = [
+    "-C", "link-arg=-Xlinker",
+    "-C", "link-arg=-rpath",
+    "-C", "link-arg=$(rustc --print sysroot)/lib",
+]
+EOL
+		cargo install --root . --vers $RUSTFMT_VERSION --force rustfmt-nightly || exit
+		echo ""
+		echo "rustfmt v$RUSTFMT_VERSION install complete."
+		echo ""
+		popd
 	fi
 	# Put local cargo format on PATH
 	PATH="$(pwd)/tools/local_cargo/bin:$PATH"
 fi
 
+set +e
+let FAIL=0
+set -e
+
 # Find folders with Cargo.toml files in them and run `cargo fmt`.
 if [ "$1" == "diff" ]; then
 	# Just print out diffs and count errors, used by Travis
-	let FAIL=0
 	for f in $(find . | grep Cargo.toml); do
 		pushd $(dirname $f) > /dev/null
 		cargo-fmt -- --write-mode=diff || let FAIL=FAIL+1
@@ -74,7 +94,6 @@ if [ "$1" == "diff" ]; then
 	done
 	exit $FAIL
 else
-	let FAIL=0
 	for f in $(find . | grep Cargo.toml); do
 		pushd $(dirname $f) > /dev/null
 		cargo-fmt -- --write-mode=overwrite || let FAIL=FAIL+1
