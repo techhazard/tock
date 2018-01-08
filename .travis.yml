@@ -1,6 +1,9 @@
 sudo: false
 language: rust
 
+env:
+  - RUSTUP_TOOLCHAIN=nightly-2018-01-05
+
 cache:
   cargo: true
   directories:
